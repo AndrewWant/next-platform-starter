@@ -1,24 +1,20 @@
 'use client';
 
 import { createClient } from '../../lib/supabase/client';
-import { useSearchParams } from 'next/navigation';
-import { Suspense, useState } from 'react';
+import { useState } from 'react';
 
-function LoginForm() {
-  const searchParams = useSearchParams();
-  const next = searchParams.get('next') ?? '/';
-  const error = searchParams.get('error');
+export default function LoginPage({ searchParams }) {
   const [authError, setAuthError] = useState(null);
   const [loading, setLoading] = useState(false);
 
   async function handleGoogleLogin() {
-    setAuthError(null);
     setLoading(true);
+    setAuthError(null);
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+        redirectTo: `${window.location.origin}/auth/callback`,
       },
     });
     if (error) {
@@ -34,8 +30,8 @@ function LoginForm() {
         <p className="text-slate-400">Access is by invitation only.</p>
       </div>
 
-      {(error || authError) && (
-        <p className="text-red-400 text-sm">{authError ?? 'Authentication failed. Please try again.'}</p>
+      {authError && (
+        <p className="text-red-400 text-sm">{authError}</p>
       )}
 
       <button
@@ -53,13 +49,5 @@ function LoginForm() {
         {loading ? 'Redirecting...' : 'Continue with Google'}
       </button>
     </div>
-  );
-}
-
-export default function LoginPage() {
-  return (
-    <Suspense>
-      <LoginForm />
-    </Suspense>
   );
 }

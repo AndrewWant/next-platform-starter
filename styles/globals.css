@@ -39,6 +39,44 @@
     }
 }
 
+/* ── LineUp bowling app ────────────────────────────────────────────────────── */
+
+@layer components {
+  /* Range sliders — large touch targets, green accent */
+  .lineup-slider {
+    @apply w-full h-2 rounded-full appearance-none cursor-pointer;
+    @apply bg-slate-700 accent-green-400;
+    touch-action: none;
+  }
+  .lineup-slider::-webkit-slider-thumb {
+    @apply appearance-none w-7 h-7 rounded-full bg-green-400 shadow-md;
+  }
+  .lineup-slider::-moz-range-thumb {
+    @apply w-7 h-7 rounded-full bg-green-400 border-0 shadow-md;
+  }
+
+  /* Result-phase slider: amber thumb to visually distinguish */
+  .lineup-slider-result::-webkit-slider-thumb {
+    @apply bg-amber-400;
+  }
+  .lineup-slider-result::-moz-range-thumb {
+    @apply bg-amber-400;
+  }
+  .lineup-slider-result {
+    accent-color: theme(colors.amber.400);
+  }
+
+  /* RTL direction for right-handed bowlers (board 1 on the right, 39 on the left) */
+  .slider-rtl {
+    direction: rtl;
+  }
+
+  /* Hamburger menu items */
+  .menu-item {
+    @apply block w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl transition-colors;
+  }
+}
+
 @layer components {
     .markdown {
         > * {

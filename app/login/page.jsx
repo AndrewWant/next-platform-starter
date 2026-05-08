@@ -3,7 +3,7 @@
 import { createClient } from '../../lib/supabase/client';
 import { useState } from 'react';
 
-export default function LoginPage({ searchParams }) {
+export default function LoginPage() {
   const [authError, setAuthError] = useState(null);
   const [loading, setLoading] = useState(false);
 

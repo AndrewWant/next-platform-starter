@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { SignOutButton } from './sign-out-button';
 
 const navItems = [
   { linkText: 'Home', href: '/' },
@@ -6,7 +7,7 @@ const navItems = [
   { linkText: 'Projects', href: '/projects' },
 ];
 
-export function Header() {
+export function Header({ user }) {
   return (
     <nav className="flex flex-wrap items-center gap-4 pt-6 pb-12 sm:pt-12 md:pb-24">
       <Link href="/" className="text-lg font-semibold tracking-tight">
@@ -24,24 +25,30 @@ export function Header() {
         </ul>
       )}
       <div className="ml-auto flex items-center gap-4">
-        <Link
-          href="https://linkedin.com/in/andrewwant"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm text-slate-400 hover:text-white transition-colors"
-          aria-label="LinkedIn"
-        >
-          LinkedIn
-        </Link>
-        <Link
-          href="https://github.com/andrewwant"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm text-slate-400 hover:text-white transition-colors"
-          aria-label="GitHub"
-        >
-          GitHub
-        </Link>
+        {user ? (
+          <SignOutButton />
+        ) : (
+          <>
+            <Link
+              href="https://linkedin.com/in/andrewwant"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-slate-400 hover:text-white transition-colors"
+              aria-label="LinkedIn"
+            >
+              LinkedIn
+            </Link>
+            <Link
+              href="https://github.com/andrewwant"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-slate-400 hover:text-white transition-colors"
+              aria-label="GitHub"
+            >
+              GitHub
+            </Link>
+          </>
+        )}
       </div>
     </nav>
   );

@@ -167,7 +167,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks }) {
   // Active values by mode
   const target  = mode === 'plan' ? plan.target : result.target;
   const brk     = mode === 'plan' ? plan.brk    : result.brk;
-  const stanceB = mode === 'plan' ? plan.foot : Math.round(result.foot - session.drift);
+  const stanceB = mode === 'plan' ? plan.foot : result.foot;
   const finish  = result.finish;
 
   // Ball release at foul line (for the Bézier path start)
@@ -250,7 +250,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks }) {
   const ballPath = (() => {
     if (!tweaks.showPath) return null;
     const finishBoard = mode === 'record' && finish != null ? finish : 17;
-    const releaseBd = (mode === 'plan') ? ballRelease : (result.foot - session.ballOffset);
+    const releaseBd = (mode === 'plan') ? ballRelease : (result.foot + (session.drift ?? 0) - session.ballOffset);
     const sx = bowlerX(releaseBd,  hand);
     const tx = bowlerX(target,     hand);
     const bx = bowlerX(brk,        hand);

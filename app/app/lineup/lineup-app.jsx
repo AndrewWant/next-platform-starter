@@ -17,25 +17,27 @@ import HamburgerMenu from '../../../components/lineup/HamburgerMenu';
 
 // ─── Plan geometry ────────────────────────────────────────────────────────────
 
+// Given target and breakpoint, derive all other values for a planned line.
 function computePlan({ target, brk, patternLength, ballOffset, drift }) {
-  const slope      = (brk - target) / (patternLength - 15);
+  const slope       = (brk - target) / (patternLength - 15);
   const ballRelease = target - 15 * slope;
-  const slideFoot  = ballRelease + ballOffset;
-  const setupFoot  = Math.round(slideFoot - drift);
-  const ballStart  = setupFoot - ballOffset;
+  const slideFoot   = ballRelease + ballOffset;
+  const setupFoot   = Math.round(slideFoot - drift);
+  const ballStart   = setupFoot - ballOffset;
   return { ballRelease, slideFoot, setupFoot, ballStart, slope };
 }
 
-function expectedBreakpoint({ foot, target, patternLength, ballOffset }) {
-  const ballRelease = foot - ballOffset;
+// Expected breakpoint hint for the record-mode readout (setup foot → geometric brk).
+function expectedBreakpoint(setupFoot, target, { patternLength, ballOffset, drift }) {
+  const ballRelease = (setupFoot + drift) - ballOffset;
   const slope       = (target - ballRelease) / 15;
-  return Math.round(ballRelease + slope * patternLength);
+  return Math.round(target + slope * (patternLength - 15));
 }
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const POCKET = 17;
 
-// ─── Top-level tweaks defaults ────────────────────────────────────────────────
+// ─── Tweaks defaults ──────────────────────────────────────────────────────────
 
 const TWEAK_DEFAULTS = {
   showPinNumbers:    true,
@@ -50,19 +52,19 @@ export default function LineupApp() {
   const [, bump]   = useReducer(x => x + 1, 0);
   const refresh    = useCallback(() => bump(), []);
 
-  const [sessionCfg, setSessionCfg] = useState(null);  // null = setup screen
+  const [sessionCfg, setSessionCfg] = useState(null);  // null → setup screen
   const [mode,       setMode]       = useState('plan'); // 'plan' | 'record'
   const [editIndex,  setEditIndex]  = useState(null);
   const [drawer,     setDrawer]     = useState(null);   // 'history' | 'menu' | null
   const [tweaks,     setTweaks]     = useState(TWEAK_DEFAULTS);
 
-  // Plan state: all three values are draggable
+  // Plan: target and breakpoint are the two independent inputs.
+  // Foot always derives from computePlan(target, brk).
   const [planTarget, setPlanTarget] = useState(10);
   const [planBrk,    setPlanBrk]    = useState(7);
-  const [planFoot,   setPlanFoot]   = useState(null);  // null = derived
-  const [footPinned, setFootPinned] = useState(false); // true = user manually set foot
 
-  // Record state
+  // Record: all four values independently set.
+  // "foot" = setup foot (where the bowler stands before approach).
   const [recFoot,   setRecFoot]   = useState(null);
   const [recTarget, setRecTarget] = useState(null);
   const [recBrk,    setRecBrk]    = useState(null);
@@ -76,6 +78,9 @@ export default function LineupApp() {
     setSessionCfg(cfg);
     setMode('plan');
     setEditIndex(null);
+    const brkBase = cfg.patternLength - 31;
+    setPlanBrk(clamp(brkBase, 1, 39));
+    setPlanTarget(10);
     refresh();
   }, [refresh]);
 
@@ -100,7 +105,6 @@ export default function LineupApp() {
     setSessionCfg(null);
     setMode('plan');
     setEditIndex(null);
-    setFootPinned(false);
   }, []);
 
   // ── Derived plan values ────────────────────────────────────────────────────
@@ -116,51 +120,72 @@ export default function LineupApp() {
     });
   }, [planTarget, planBrk, sessionCfg]);
 
-  // Effective plan foot: pinned override OR derived
-  const effectivePlanFoot = footPinned && planFoot != null ? planFoot : planDerived.setupFoot;
+  // Setup foot, always derived from target + brk via computePlan.
+  const planFoot = Math.round(planDerived.setupFoot);
 
-  // ── Lane callbacks ─────────────────────────────────────────────────────────
+  // ── Lane drag callbacks ────────────────────────────────────────────────────
+  //
+  // Plan mode interaction model:
+  //   drag target → target changes, foot re-derives (brk fixed)
+  //   drag brk    → brk changes, target back-computes to keep foot fixed, foot re-derives
+  //   drag foot   → foot back-computes target so the derived foot ≈ dragged board (brk fixed)
+  //
+  // In all plan cases brk or target is the primary input and foot is always derived.
 
   const laneOn = useMemo(() => ({
     target: (b) => {
       if (mode === 'plan') {
+        // target changes → brk re-derives from move table (current foot + new target → new brk)
+        const newBrk = LaneRead.expectedBreakpoint(planDerived.slideFoot, b);
         setPlanTarget(b);
-        setFootPinned(false); // revert foot to derived when target changes
+        setPlanBrk(clamp(newBrk, 1, 39));
       } else {
         setRecTarget(b);
       }
     },
     brk: (b) => {
       if (mode === 'plan') {
+        // brk changes → target stays, foot re-derives automatically via computePlan
         setPlanBrk(b);
-        setFootPinned(false); // revert foot to derived when BP changes
       } else {
         setRecBrk(b);
       }
     },
     foot: (b) => {
       if (mode === 'plan') {
-        setPlanFoot(b);
-        setFootPinned(true);
+        // foot drag → target moves to keep brk the same (move table inverse)
+        // slideFoot = (target - brk) * 1.68 + brk + BALL_TO_SLIDE_FOOT
+        // → target = (slideFoot - BALL_TO_SLIDE_FOOT - brk) / 1.68 + brk
+        const slideFoot = b + (sessionCfg?.drift ?? 0);
+        const rawTarget = (slideFoot - CONSTANTS.BALL_TO_SLIDE_FOOT - planBrk) / 1.68 + planBrk;
+        if (rawTarget >= 1 && rawTarget <= 39) {
+          setPlanTarget(Math.round(rawTarget));
+          // planBrk stays unchanged
+        } else {
+          // target would be out of range: clamp target and also adjust brk
+          const newTarget = clamp(Math.round(rawTarget), 1, 39);
+          const newBrk    = LaneRead.expectedBreakpoint(slideFoot, newTarget);
+          setPlanTarget(newTarget);
+          setPlanBrk(clamp(newBrk, 1, 39));
+        }
       } else {
         setRecFoot(b);
       }
     },
     finish: (b) => setRecFinish(b),
-  }), [mode, footPinned]);
+  }), [mode, planDerived, planBrk, sessionCfg]);
 
   // ── Mode switching ─────────────────────────────────────────────────────────
 
   const enterRecord = useCallback(() => {
     if (editIndex == null) {
-      // Pre-fill from plan
-      setRecFoot(effectivePlanFoot);
+      setRecFoot(planFoot);
       setRecTarget(planTarget);
       setRecBrk(planBrk);
       setRecFinish(POCKET);
     }
     setMode('record');
-  }, [editIndex, effectivePlanFoot, planTarget, planBrk]);
+  }, [editIndex, planFoot, planTarget, planBrk]);
 
   const enterPlan = useCallback(() => {
     setEditIndex(null);
@@ -170,16 +195,20 @@ export default function LineupApp() {
   // ── Save shot ──────────────────────────────────────────────────────────────
 
   const handleSave = useCallback(() => {
+    const actualFoot   = recFoot   ?? planFoot;
+    const actualTarget = recTarget ?? planTarget;
+    const actualBrk    = recBrk    ?? planBrk;
+
     const planned = {
-      foot:   effectivePlanFoot,
+      foot:   planFoot,
       target: planTarget,
       brk:    planBrk,
       finish: POCKET,
     };
     const actual = {
-      foot:   recFoot   ?? effectivePlanFoot,
-      target: recTarget ?? planTarget,
-      brk:    recBrk    ?? planBrk,
+      foot:   actualFoot,
+      target: actualTarget,
+      brk:    actualBrk,
       finish: recFinish,
     };
 
@@ -191,36 +220,34 @@ export default function LineupApp() {
     }
 
     // ── Post-save suggestion ────────────────────────────────────────────────
-    const lr     = State.laneRead;
-    const shots  = lr?.shots ?? [];
+    const lr    = State.laneRead;
+    const shots = lr?.shots ?? [];
     const breakpointBase = (sessionCfg?.patternLength ?? 42) - 31;
 
     let nextTarget = planTarget;
     let nextBrk    = planBrk;
 
     if (shots.length === 1) {
-      // Exploration: first shot hit pocket near the rule-of-31 breakpoint base
-      const atBase   = Math.abs(actual.brk    - breakpointBase) <= CONSTANTS.BREAKPOINT_LEEWAY;
-      const atPocket = Math.abs(actual.finish  - POCKET)        <= 1;
+      const atBase   = Math.abs(actualBrk    - breakpointBase) <= CONSTANTS.BREAKPOINT_LEEWAY;
+      const atPocket = Math.abs(actual.finish - POCKET)        <= 1;
       if (atBase && atPocket) {
-        nextTarget = clamp(actual.target + 3, 1, 39);
-        nextBrk    = clamp(actual.brk    + 3, 1, 39);
+        nextTarget = clamp(actualTarget + 3, 1, 39);
+        nextBrk    = clamp(actualBrk    + 3, 1, 39);
       } else if (State.suggestion) {
-        nextTarget = State.suggestion.target      ?? planTarget;
-        nextBrk    = State.suggestion.breakpoint  ?? planBrk;
+        nextTarget = State.suggestion.target     ?? planTarget;
+        nextBrk    = State.suggestion.breakpoint ?? planBrk;
       }
     } else if (State.suggestion) {
-      nextTarget = State.suggestion.target      ?? planTarget;
-      nextBrk    = State.suggestion.breakpoint  ?? planBrk;
+      nextTarget = State.suggestion.target     ?? planTarget;
+      nextBrk    = State.suggestion.breakpoint ?? planBrk;
     }
 
     setPlanTarget(nextTarget);
     setPlanBrk(nextBrk);
-    setFootPinned(false);   // re-derive foot from new suggestion
     setMode('plan');
     refresh();
   }, [
-    effectivePlanFoot, planTarget, planBrk,
+    planFoot, planTarget, planBrk,
     recFoot, recTarget, recBrk, recFinish,
     editIndex, sessionCfg, refresh,
   ]);
@@ -274,30 +301,29 @@ export default function LineupApp() {
   const balls     = getBalls();
   const shotCount = history.length;
 
+  // "foot" everywhere in the UI = setup foot (where bowler stands).
+  // plan.foot and result.foot are both setup foot.
   const planObj = {
-    foot:   effectivePlanFoot,
-    target: planTarget,
-    brk:    planBrk,
+    foot:    planFoot,
+    target:  planTarget,
+    brk:     planBrk,
     derived: planDerived,
   };
 
+  const resultFoot = recFoot ?? planFoot;
   const resultObj = {
-    foot:   recFoot   ?? effectivePlanFoot,
+    foot:   resultFoot,
     target: recTarget ?? planTarget,
     brk:    recBrk    ?? planBrk,
     finish: recFinish,
   };
 
-  const expectedBP = sessionCfg ? expectedBreakpoint({
-    foot:          resultObj.foot,
-    target:        resultObj.target,
-    patternLength: sessionCfg.patternLength,
-    ballOffset:    sessionCfg.ballOffset,
-  }) : null;
+  // Expected breakpoint shown as a hint on the BP chip in record mode.
+  const expectedBP = sessionCfg
+    ? expectedBreakpoint(resultObj.foot, resultObj.target, sessionCfg)
+    : null;
 
-  const headMeta = sessionCfg
-    ? `${sessionCfg.patternLength}ft · ${sessionCfg.hand}H · drift ${sessionCfg.drift}`
-    : '';
+  const headMeta = `${sessionCfg.patternLength}ft · ${sessionCfg.hand}H · drift ${sessionCfg.drift}`;
 
   return (
     <div className="lu-root">
@@ -366,10 +392,7 @@ export default function LineupApp() {
           <>
             <Chip color="var(--lu-target)" label="Target"     value={planTarget} />
             <Chip color="var(--lu-brk)"    label="Breakpoint" value={planBrk} />
-            <Chip color="var(--lu-stance)" label="Foot"       value={effectivePlanFoot} derived={!footPinned} />
-            <Chip color="#a98860"          label="Ball/Slide"
-                  value={`${Math.round(planDerived.ballStart)}/${Math.round(planDerived.slideFoot)}`}
-                  derived small />
+            <Chip color="var(--lu-stance)" label="Foot"       value={planFoot} />
           </>
         ) : (
           <>
@@ -428,16 +451,13 @@ export default function LineupApp() {
 
 // ─── Chip readout ─────────────────────────────────────────────────────────────
 
-function Chip({ color, label, value, hint, derived, small }) {
+function Chip({ color, label, value, hint }) {
   return (
     <div className="lu-chip">
       <span className="lu-chip-bar" style={{ background: color }} />
       <div className="lu-chip-body">
-        <div className="lu-chip-label">
-          {label}
-          {derived && <span className="lu-chip-tag">derived</span>}
-        </div>
-        <div className={`lu-chip-value${small ? ' sm' : ''}`}>{value}</div>
+        <div className="lu-chip-label">{label}</div>
+        <div className="lu-chip-value">{value ?? '—'}</div>
         {hint && (
           <div style={{ fontSize:9.5, color:'var(--lu-txt-3)', fontFamily:"'JetBrains Mono', monospace" }}>
             {hint}

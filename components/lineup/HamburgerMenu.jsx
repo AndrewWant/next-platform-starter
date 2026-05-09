@@ -1,269 +1,212 @@
-'use client'
+'use client';
 
-import { useRef, useState } from 'react'
-import { State } from '../../lib/lineup/state'
+import { useState } from 'react';
 
-function ConfirmRow({ label, onConfirm, onCancel, danger = false }) {
+const S = {
+  menuBody: { display:'flex', flexDirection:'column', gap:16 },
+  secHead: {
+    fontFamily:"'JetBrains Mono', monospace", fontSize:11, letterSpacing:'0.14em',
+    fontWeight:600, color:'var(--lu-txt-3)', textTransform:'uppercase', margin:'0 0 8px',
+  },
+  ballList: { listStyle:'none', padding:0, margin:'0 0 8px', display:'flex', flexDirection:'column', gap:4 },
+  ballBtn: (active) => ({
+    width:'100%', background: active ? 'rgba(238,122,46,0.06)' : 'var(--lu-bg-2)',
+    border: `1px solid ${active ? 'rgba(238,122,46,0.55)' : 'var(--lu-line)'}`,
+    color:'var(--lu-txt)', padding:'9px 10px', borderRadius:9,
+    display:'grid', gridTemplateColumns:'14px 1fr auto', gap:10,
+    alignItems:'center', textAlign:'left', cursor:'pointer', fontFamily:'inherit',
+    transition:'border-color 0.15s, background 0.15s',
+  }),
+  dot: (active) => ({
+    width:10, height:10, borderRadius:'50%',
+    background: active ? 'var(--lu-target)' : 'var(--lu-bg-3)',
+  }),
+  menuBtn: (danger) => ({
+    width:'100%',
+    background: danger ? 'rgba(216,80,76,0.06)' : 'var(--lu-bg-2)',
+    border: `1px solid ${danger ? 'rgba(216,80,76,0.3)' : 'var(--lu-line)'}`,
+    color: danger ? 'var(--lu-danger)' : 'var(--lu-txt)',
+    fontSize:13, fontWeight:500, padding:'10px 12px', borderRadius:9,
+    marginBottom:6, textAlign:'left', cursor:'pointer', fontFamily:'inherit',
+  }),
+  toggleRow: (on) => ({
+    display:'flex', alignItems:'center', justifyContent:'space-between',
+    width:'100%', background:'transparent', border:'none', color:'var(--lu-txt)',
+    fontSize:13, padding:'9px 2px',
+    borderBottom:'1px solid var(--lu-line)', textAlign:'left',
+    cursor:'pointer', fontFamily:'inherit',
+  }),
+  linkBtn: {
+    background:'transparent', border:'none', color:'var(--lu-target)',
+    fontWeight:600, fontSize:12.5, padding:'6px 0', cursor:'pointer', fontFamily:'inherit',
+  },
+};
+
+function Toggle({ on }) {
   return (
-    <div className="flex gap-2 mt-1">
-      <button
-        onClick={onConfirm}
-        className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-          danger
-            ? 'bg-red-900/50 hover:bg-red-800/50 text-red-300'
-            : 'bg-slate-700 hover:bg-slate-600 text-white'
-        }`}
-      >
-        {label}
-      </button>
-      <button
-        onClick={onCancel}
-        className="px-3 py-1.5 text-xs bg-slate-800 text-slate-400 rounded-lg"
-      >
-        Cancel
-      </button>
-    </div>
-  )
+    <span style={{
+      width:34, height:20, borderRadius:999, position:'relative', flexShrink:0,
+      background: on ? 'rgba(238,122,46,0.6)' : 'var(--lu-bg-3)',
+      transition:'background 0.15s', display:'inline-block',
+    }}>
+      <span style={{
+        position:'absolute', top:2, left:2,
+        width:16, height:16, borderRadius:'50%',
+        background: on ? '#ffe2cb' : 'var(--lu-txt-2)',
+        transform: on ? 'translateX(14px)' : 'none',
+        transition:'transform 0.18s ease, background 0.15s',
+      }} />
+    </span>
+  );
 }
 
+function SliderRow({ label, value, min, max, step, onChange }) {
+  return (
+    <div style={{ padding:'8px 2px', borderBottom:'1px solid var(--lu-line)' }}>
+      <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'var(--lu-txt)', marginBottom:6 }}>
+        <span>{label}</span>
+        <span style={{ fontFamily:"'JetBrains Mono', monospace", color:'var(--lu-txt-2)', fontSize:12 }}>
+          {value.toFixed(1)}
+        </span>
+      </div>
+      <input type="range" min={min} max={max} step={step} value={value}
+             onChange={e => onChange(parseFloat(e.target.value))}
+             style={{ width:'100%', accentColor:'var(--lu-target)' }} />
+    </div>
+  );
+}
+
+/**
+ * Left-side menu drawer.
+ *
+ * Props:
+ *   balls        — from getBalls()
+ *   tweaks       — { showPinNumbers, showPath, showApproachDots, markerContrast }
+ *   setTweak     — (key, value) => void
+ *   onSwitchBall — (ballId) => void
+ *   onAddBall    — (name, notes) => void
+ *   onWipeBall   — () => void
+ *   onWipeAll    — () => void
+ *   onRestart    — () => void
+ *   onExport     — () => void
+ *   onImport     — (jsonString) => void
+ *   onClose      — () => void
+ */
 export default function HamburgerMenu({
-  open,
+  balls, tweaks, setTweak,
+  onSwitchBall, onAddBall,
+  onWipeBall, onWipeAll, onRestart,
+  onExport, onImport,
   onClose,
-  onSwitchBall,
-  onAddBall,
-  onWipeBall,
-  onWipeAll,
-  onRestart,
-  onExport,
-  onImport,
-  balls,
 }) {
-  const [confirm, setConfirm] = useState(null)  // 'wipe-ball' | 'wipe-all' | 'restart'
-  const [addOpen, setAddOpen] = useState(false)
-  const [editingBall, setEditingBall] = useState(null)
-  const importRef = useRef(null)
+  const [adding,   setAdding]   = useState(false);
+  const [newName,  setNewName]  = useState('');
+  const [newNotes, setNewNotes] = useState('');
 
-  function handleImport(e) {
-    const file = e.target.files[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = ev => { onImport(ev.target.result) }
-    reader.readAsText(file)
-    e.target.value = ''
-  }
+  const submitBall = () => {
+    if (!newName.trim()) return;
+    onAddBall(newName.trim(), newNotes.trim());
+    setNewName(''); setNewNotes(''); setAdding(false);
+  };
 
-  function handleBallSave(ballId, name, notes) {
-    const ball = State.session?.balls.find(b => b.ballId === ballId)
-    if (ball) { ball.name = name; ball.notes = notes }
-    setEditingBall(null)
-  }
-
-  if (!open) return null
+  const handleImport = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => { try { onImport(ev.target.result); onClose(); } catch {} };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/50 z-40"
-        onClick={onClose}
-      />
+    <div style={S.menuBody}>
 
-      {/* Panel */}
-      <div className="fixed right-0 top-0 bottom-0 z-50 w-72 bg-slate-900 border-l border-slate-800 flex flex-col overflow-y-auto shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
-          <span className="font-semibold text-white">Menu</span>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-white transition-colors text-xl leading-none"
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-
-        <div className="flex-1 px-4 py-4 space-y-6">
-          {/* Ball list */}
-          <section>
-            <h3 className="text-xs text-slate-500 uppercase tracking-wider mb-2">Balls</h3>
-            <div className="space-y-1">
-              {balls.map(ball => (
-                <div key={ball.ballId}>
-                  {editingBall === ball.ballId ? (
-                    <BallEditForm
-                      ball={ball}
-                      onSave={(name, notes) => handleBallSave(ball.ballId, name, notes)}
-                      onCancel={() => setEditingBall(null)}
-                    />
-                  ) : (
-                    <div
-                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${
-                        ball.active
-                          ? 'bg-green-900/30 border border-green-500/30'
-                          : 'bg-slate-800 hover:bg-slate-700'
-                      }`}
-                      onClick={() => { if (!ball.active) { onSwitchBall(ball.ballId); onClose() } }}
-                    >
-                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${ball.active ? 'bg-green-400' : 'bg-slate-600'}`} />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-white truncate">{ball.name}</div>
-                        {ball.notes && <div className="text-xs text-slate-500 truncate">{ball.notes}</div>}
-                      </div>
-                      <div className="text-xs text-slate-500 flex-shrink-0">{ball.shotCount}sh</div>
-                      <button
-                        onClick={e => { e.stopPropagation(); setEditingBall(ball.ballId) }}
-                        className="text-slate-500 hover:text-white text-sm"
-                        aria-label="Edit ball"
-                      >
-                        ✎
-                      </button>
-                    </div>
+      {/* Balls */}
+      <section>
+        <h4 style={S.secHead}>Balls</h4>
+        <ul style={S.ballList}>
+          {balls.map(b => (
+            <li key={b.ballId}>
+              <button style={S.ballBtn(b.active)} onClick={() => { onSwitchBall(b.ballId); onClose(); }}>
+                <span style={S.dot(b.active)} />
+                <span style={{ display:'flex', flexDirection:'column', lineHeight:1.2, minWidth:0 }}>
+                  <span style={{ fontWeight:600, fontSize:13 }}>{b.name}</span>
+                  {b.notes && (
+                    <span style={{ fontSize:11, color:'var(--lu-txt-3)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                      {b.notes}
+                    </span>
                   )}
-                </div>
-              ))}
+                </span>
+                <span style={{ fontFamily:"'JetBrains Mono', monospace", fontSize:11, color:'var(--lu-txt-3)' }}>
+                  {b.shotCount}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        {!adding ? (
+          <button style={S.linkBtn} onClick={() => setAdding(true)}>+ Add ball</button>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:6, background:'var(--lu-bg-2)', border:'1px solid var(--lu-line)', borderRadius:9, padding:8 }}>
+            <input value={newName} onChange={e => setNewName(e.target.value)}
+                   placeholder="Name (e.g. Solid)"
+                   style={{ background:'var(--lu-bg-1)', border:'1px solid var(--lu-line)', color:'var(--lu-txt)', borderRadius:7, padding:'7px 9px', fontSize:13, outline:'none', fontFamily:'inherit' }} />
+            <input value={newNotes} onChange={e => setNewNotes(e.target.value)}
+                   placeholder="Notes (optional)"
+                   style={{ background:'var(--lu-bg-1)', border:'1px solid var(--lu-line)', color:'var(--lu-txt)', borderRadius:7, padding:'7px 9px', fontSize:13, outline:'none', fontFamily:'inherit' }} />
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, alignItems:'center' }}>
+              <button style={S.linkBtn} onClick={() => setAdding(false)}>Cancel</button>
+              <button className="lu-btn-primary" onClick={submitBall}
+                      style={{ width:'auto', padding:'8px 12px', fontSize:12.5 }}>Add</button>
             </div>
+          </div>
+        )}
+      </section>
 
-            {/* Add ball */}
-            <button
-              onClick={() => setAddOpen(v => !v)}
-              className="mt-2 w-full text-sm text-slate-400 hover:text-white py-2 transition-colors"
-            >
-              + Add ball
-            </button>
-            {addOpen && (
-              <AddBallForm
-                onAdd={(name, notes) => { onAddBall(name, notes); setAddOpen(false); onClose() }}
-                onCancel={() => setAddOpen(false)}
-              />
-            )}
-          </section>
-
-          {/* Session actions */}
-          <section>
-            <h3 className="text-xs text-slate-500 uppercase tracking-wider mb-2">Session</h3>
-            <div className="space-y-1">
-              <button onClick={onExport} className="menu-item">Export JSON</button>
-              <button onClick={() => importRef.current?.click()} className="menu-item">Import JSON</button>
-              <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
-
-              {confirm === 'wipe-ball' ? (
-                <ConfirmRow
-                  label="Wipe this ball's shots"
-                  danger
-                  onConfirm={() => { onWipeBall(); setConfirm(null); onClose() }}
-                  onCancel={() => setConfirm(null)}
-                />
-              ) : (
-                <button onClick={() => setConfirm('wipe-ball')} className="menu-item text-red-400">Wipe ball shots</button>
-              )}
-
-              {confirm === 'wipe-all' ? (
-                <ConfirmRow
-                  label="Wipe ALL shots"
-                  danger
-                  onConfirm={() => { onWipeAll(); setConfirm(null); onClose() }}
-                  onCancel={() => setConfirm(null)}
-                />
-              ) : (
-                <button onClick={() => setConfirm('wipe-all')} className="menu-item text-red-400">Wipe all shots</button>
-              )}
-
-              {confirm === 'restart' ? (
-                <ConfirmRow
-                  label="Restart (new setup)"
-                  onConfirm={() => { onRestart(); setConfirm(null); onClose() }}
-                  onCancel={() => setConfirm(null)}
-                />
-              ) : (
-                <button onClick={() => setConfirm('restart')} className="menu-item">New session</button>
-              )}
-            </div>
-          </section>
-        </div>
-
-        {/* Sign out */}
-        <div className="border-t border-slate-800 p-4">
-          <form action="/auth/signout" method="post">
-            <button type="submit" className="w-full text-sm text-slate-400 hover:text-white py-2 transition-colors">
-              Sign out
-            </button>
-          </form>
-        </div>
-      </div>
-    </>
-  )
-}
-
-function AddBallForm({ onAdd, onCancel }) {
-  const [name, setName] = useState('')
-  const [notes, setNotes] = useState('')
-  return (
-    <div className="bg-slate-800 rounded-xl p-3 space-y-2 mt-1">
-      <input
-        type="text"
-        placeholder="Ball name"
-        value={name}
-        onChange={e => setName(e.target.value)}
-        className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm text-white border border-slate-600 focus:border-green-400 focus:outline-none"
-        autoFocus
-      />
-      <input
-        type="text"
-        placeholder="Notes (optional)"
-        value={notes}
-        onChange={e => setNotes(e.target.value)}
-        className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm text-white border border-slate-600 focus:border-green-400 focus:outline-none"
-      />
-      <div className="flex gap-2">
-        <button
-          onClick={() => onAdd(name.trim() || 'Default Ball', notes.trim())}
-          className="flex-1 py-1.5 text-xs font-semibold bg-green-600 hover:bg-green-500 text-white rounded-lg"
-        >
-          Add
+      {/* Display */}
+      <section>
+        <h4 style={S.secHead}>Display</h4>
+        <button style={S.toggleRow(tweaks.showPinNumbers)}
+                onClick={() => setTweak('showPinNumbers', !tweaks.showPinNumbers)}>
+          <span>Show pin numbers</span>
+          <Toggle on={tweaks.showPinNumbers} />
         </button>
-        <button
-          onClick={onCancel}
-          className="px-3 py-1.5 text-xs bg-slate-700 text-slate-400 rounded-lg"
-        >
-          Cancel
+        <button style={S.toggleRow(tweaks.showPath)}
+                onClick={() => setTweak('showPath', !tweaks.showPath)}>
+          <span>Show ball path</span>
+          <Toggle on={tweaks.showPath} />
         </button>
-      </div>
+        <button style={{ ...S.toggleRow(tweaks.showApproachDots), borderBottom:'none' }}
+                onClick={() => setTweak('showApproachDots', !tweaks.showApproachDots)}>
+          <span>Show approach dots</span>
+          <Toggle on={tweaks.showApproachDots} />
+        </button>
+        <SliderRow label="Marker board contrast" value={tweaks.markerContrast}
+                   min={0} max={1} step={0.1}
+                   onChange={v => setTweak('markerContrast', v)} />
+      </section>
+
+      {/* Session */}
+      <section>
+        <h4 style={S.secHead}>Session</h4>
+        <button style={S.menuBtn(false)} onClick={() => { onExport(); onClose(); }}>
+          Export session JSON
+        </button>
+        <label style={{ ...S.menuBtn(false), display:'block', cursor:'pointer' }}>
+          Import session JSON
+          <input type="file" accept=".json" style={{ display:'none' }} onChange={handleImport} />
+        </label>
+        <button style={S.menuBtn(false)} onClick={() => { if (confirm('Wipe shots for this ball?')) { onWipeBall(); onClose(); } }}>
+          Wipe shots for this ball
+        </button>
+        <button style={S.menuBtn(false)} onClick={() => { if (confirm('Wipe ALL shots?')) { onWipeAll(); onClose(); } }}>
+          Wipe all shots
+        </button>
+        <button style={S.menuBtn(true)} onClick={() => { if (confirm('End session and start over?')) { onRestart(); onClose(); } }}>
+          End session &amp; restart
+        </button>
+      </section>
+
     </div>
-  )
-}
-
-function BallEditForm({ ball, onSave, onCancel }) {
-  const [name, setName] = useState(ball.name)
-  const [notes, setNotes] = useState(ball.notes || '')
-  return (
-    <div className="bg-slate-800 rounded-xl p-3 space-y-2">
-      <input
-        type="text"
-        value={name}
-        onChange={e => setName(e.target.value)}
-        className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm text-white border border-slate-600 focus:border-green-400 focus:outline-none"
-        autoFocus
-      />
-      <input
-        type="text"
-        value={notes}
-        onChange={e => setNotes(e.target.value)}
-        placeholder="Notes..."
-        className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm text-white border border-slate-600 focus:border-green-400 focus:outline-none"
-      />
-      <div className="flex gap-2">
-        <button
-          onClick={() => onSave(name.trim() || 'Default Ball', notes.trim())}
-          className="flex-1 py-1.5 text-xs font-semibold bg-green-600 hover:bg-green-500 text-white rounded-lg"
-        >
-          Save
-        </button>
-        <button
-          onClick={onCancel}
-          className="px-3 py-1.5 text-xs bg-slate-700 text-slate-400 rounded-lg"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  )
+  );
 }

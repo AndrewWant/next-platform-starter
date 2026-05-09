@@ -1,345 +1,449 @@
-'use client'
+'use client';
 
-import { useState, useReducer, useCallback } from 'react'
-import { CONSTANTS, initSession, encodeSessionURL } from '../../../lib/lineup/constants'
-import { LaneRead } from '../../../lib/lineup/models'
+import { useState, useReducer, useCallback, useMemo } from 'react';
+import { CONSTANTS, initSession } from '../../../lib/lineup/constants';
+import { LaneRead } from '../../../lib/lineup/models';
 import {
   State, startSession, recordShot, updateShot, removeShot,
   addBall, switchBall, wipeBallShots, wipeAllShots,
-  exportSessionJSON, importSessionJSON, setEditingIndex,
+  exportSessionJSON, importSessionJSON,
   getShotHistory, getBalls,
-} from '../../../lib/lineup/state'
-import SetupModal    from '../../../components/lineup/SetupModal'
-import SuggestionRow from '../../../components/lineup/SuggestionRow'
-import SliderOverlay from '../../../components/lineup/SliderOverlay'
-import ShotHistory   from '../../../components/lineup/ShotHistory'
-import HamburgerMenu from '../../../components/lineup/HamburgerMenu'
+} from '../../../lib/lineup/state';
+import Lane        from '../../../components/lineup/Lane';
+import Drawer      from '../../../components/lineup/Drawer';
+import SetupScreen from '../../../components/lineup/SetupScreen';
+import ShotHistory from '../../../components/lineup/ShotHistory';
+import HamburgerMenu from '../../../components/lineup/HamburgerMenu';
+
+// ─── Plan geometry ────────────────────────────────────────────────────────────
+
+function computePlan({ target, brk, patternLength, ballOffset, drift }) {
+  const slope      = (brk - target) / (patternLength - 15);
+  const ballRelease = target - 15 * slope;
+  const slideFoot  = ballRelease + ballOffset;
+  const setupFoot  = Math.round(slideFoot - drift);
+  const ballStart  = setupFoot - ballOffset;
+  return { ballRelease, slideFoot, setupFoot, ballStart, slope };
+}
+
+function expectedBreakpoint({ foot, target, patternLength, ballOffset }) {
+  const ballRelease = foot - ballOffset;
+  const slope       = (target - ballRelease) / 15;
+  return Math.round(ballRelease + slope * patternLength);
+}
+
+const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+const POCKET = 17;
+
+// ─── Top-level tweaks defaults ────────────────────────────────────────────────
+
+const TWEAK_DEFAULTS = {
+  showPinNumbers:    true,
+  showPath:          false,
+  showApproachDots:  true,
+  markerContrast:    0.6,
+};
+
+// ─── Main export ──────────────────────────────────────────────────────────────
 
 export default function LineupApp() {
-  // Force re-render after singleton mutations
-  const [, bump] = useReducer(x => x + 1, 0)
-  const refresh  = useCallback(() => bump(), [])
+  const [, bump]   = useReducer(x => x + 1, 0);
+  const refresh    = useCallback(() => bump(), []);
 
-  const [sessionStarted, setSessionStarted] = useState(false)
-  const [overlayOpen,    setOverlayOpen]    = useState(false)
-  const [phase,          setPhase]          = useState('plan')
-  const [editIndex,      setEditIndexState] = useState(null)
-  const [hamburgerOpen,  setHamburgerOpen]  = useState(false)
+  const [sessionCfg, setSessionCfg] = useState(null);  // null = setup screen
+  const [mode,       setMode]       = useState('plan'); // 'plan' | 'record'
+  const [editIndex,  setEditIndex]  = useState(null);
+  const [drawer,     setDrawer]     = useState(null);   // 'history' | 'menu' | null
+  const [tweaks,     setTweaks]     = useState(TWEAK_DEFAULTS);
 
-  // Plan sliders
-  const [planBP,     setPlanBP]     = useState(10)
-  const [planTarget, setPlanTarget] = useState(10)
+  // Plan state: all three values are draggable
+  const [planTarget, setPlanTarget] = useState(10);
+  const [planBrk,    setPlanBrk]    = useState(7);
+  const [planFoot,   setPlanFoot]   = useState(null);  // null = derived
+  const [footPinned, setFootPinned] = useState(false); // true = user manually set foot
 
-  // Result sliders
-  const [resFoot,   setResFoot]   = useState(20)
-  const [resTarget, setResTarget] = useState(10)
-  const [resBP,     setResBP]     = useState(10)
-  const [resFinish, setResFinish] = useState(17)
+  // Record state
+  const [recFoot,   setRecFoot]   = useState(null);
+  const [recTarget, setRecTarget] = useState(null);
+  const [recBrk,    setRecBrk]    = useState(null);
+  const [recFinish, setRecFinish] = useState(POCKET);
 
-  // ── Derived ────────────────────────────────────────────────────────────────
+  // ── Session start ──────────────────────────────────────────────────────────
 
-  const rtl = CONSTANTS.HANDEDNESS !== 'left'   // right-handed → RTL sliders
+  const handleStart = useCallback((cfg) => {
+    initSession(cfg.patternLength, cfg.ballOffset, cfg.hand === 'R' ? 'right' : 'left');
+    startSession(cfg.ballName, cfg.ballNotes);
+    setSessionCfg(cfg);
+    setMode('plan');
+    setEditIndex(null);
+    refresh();
+  }, [refresh]);
 
-  const planDerived = sessionStarted
-    ? LaneRead.footFromTargetAndBreakpoint(planTarget, planBP)
-    : { foot: 20, ballStart: 15 }
+  const handleImport = useCallback((json) => {
+    importSessionJSON(json);
+    const s = State.session;
+    setSessionCfg({
+      patternLength: s.patternLength,
+      patternLabel:  '',
+      ballOffset:    s.ballToSlideFoot,
+      drift:         0,
+      hand:          s.handedness === 'left' ? 'L' : 'R',
+      ballName:      '',
+      ballNotes:     '',
+    });
+    setMode('plan');
+    setEditIndex(null);
+    refresh();
+  }, [refresh]);
 
-  const expectedBP = sessionStarted
-    ? LaneRead.expectedBreakpoint(resFoot, resTarget)
-    : 10
+  const handleRestart = useCallback(() => {
+    setSessionCfg(null);
+    setMode('plan');
+    setEditIndex(null);
+    setFootPinned(false);
+  }, []);
 
-  const leeway = CONSTANTS.BREAKPOINT_LEEWAY || 3
-  const bpMin  = Math.max(1,  expectedBP - leeway)
-  const bpMax  = Math.min(39, expectedBP + leeway)
+  // ── Derived plan values ────────────────────────────────────────────────────
 
-  // Is this a "explore inside" suggestion (1-shot pocket hit)?
-  const lr = State.laneRead
-  const isExploration = lr && lr.shots.length === 1 &&
-    Math.abs(lr.shots[0].finishPosition - CONSTANTS.POCKET_BOARD) <= 1
+  const planDerived = useMemo(() => {
+    if (!sessionCfg) return { setupFoot: 20, slideFoot: 20, ballStart: 15, ballRelease: 15, slope: 0 };
+    return computePlan({
+      target:        planTarget,
+      brk:           planBrk,
+      patternLength: sessionCfg.patternLength,
+      ballOffset:    sessionCfg.ballOffset,
+      drift:         sessionCfg.drift,
+    });
+  }, [planTarget, planBrk, sessionCfg]);
 
-  // ── Slider sync helpers ────────────────────────────────────────────────────
+  // Effective plan foot: pinned override OR derived
+  const effectivePlanFoot = footPinned && planFoot != null ? planFoot : planDerived.setupFoot;
 
-  function syncFromSuggestion() {
-    const s = State.suggestion
-    if (!s) return
-    setPlanBP(s.breakpoint)
-    setPlanTarget(s.target)
-    setResFoot(s.foot)
-    setResTarget(s.target)
-    setResFinish(CONSTANTS.POCKET_BOARD || 17)
-    const expBP = LaneRead.expectedBreakpoint(s.foot, s.target)
-    setResBP(Math.max(1, Math.min(39, expBP)))
-  }
+  // ── Lane callbacks ─────────────────────────────────────────────────────────
 
-  function syncFromShot(shot) {
-    setPlanBP(shot.breakpoint)
-    setPlanTarget(shot.target)
-    setResFoot(shot.foot)
-    setResTarget(shot.target)
-    setResFinish(shot.finishPosition)
-    const expBP = LaneRead.expectedBreakpoint(shot.foot, shot.target)
-    const clampedBP = Math.max(
-      Math.max(1, expBP - leeway),
-      Math.min(Math.min(39, expBP + leeway), shot.breakpoint)
-    )
-    setResBP(clampedBP)
-  }
+  const laneOn = useMemo(() => ({
+    target: (b) => {
+      if (mode === 'plan') {
+        setPlanTarget(b);
+        if (!footPinned) setFootPinned(false); // keep derived
+      } else {
+        setRecTarget(b);
+      }
+    },
+    brk: (b) => {
+      if (mode === 'plan') {
+        setPlanBrk(b);
+        if (!footPinned) setFootPinned(false);
+      } else {
+        setRecBrk(b);
+      }
+    },
+    foot: (b) => {
+      if (mode === 'plan') {
+        setPlanFoot(b);
+        setFootPinned(true);
+      } else {
+        setRecFoot(b);
+      }
+    },
+    finish: (b) => setRecFinish(b),
+  }), [mode, footPinned]);
 
-  // ── Session setup ──────────────────────────────────────────────────────────
+  // ── Mode switching ─────────────────────────────────────────────────────────
 
-  function handleStart(patternLength, ballToSlideFoot, handedness, ballName, ballNotes) {
-    initSession(patternLength, ballToSlideFoot, handedness)
-    startSession(ballName, ballNotes)
-    setSessionStarted(true)
-    syncFromSuggestion()
-    setPhase('plan')
-    setOverlayOpen(true)
-    refresh()
-  }
-
-  function handleImportSetup(json) {
-    importSessionJSON(json)
-    setSessionStarted(true)
-    syncFromSuggestion()
-    setPhase('plan')
-    setOverlayOpen(true)
-    refresh()
-  }
-
-  // ── Phase changes ──────────────────────────────────────────────────────────
-
-  function handlePhaseChange(newPhase) {
-    if (newPhase === 'result' && phase === 'plan') {
-      // Pre-fill result sliders from current plan values
-      const { foot } = LaneRead.footFromTargetAndBreakpoint(planTarget, planBP)
-      setResFoot(foot)
-      setResTarget(planTarget)
-      const expBP = LaneRead.expectedBreakpoint(foot, planTarget)
-      setResBP(Math.max(bpMin, Math.min(bpMax, expBP)))
-      setResFinish(CONSTANTS.POCKET_BOARD || 17)
+  const enterRecord = useCallback(() => {
+    if (editIndex == null) {
+      // Pre-fill from plan
+      setRecFoot(effectivePlanFoot);
+      setRecTarget(planTarget);
+      setRecBrk(planBrk);
+      setRecFinish(POCKET);
     }
-    setPhase(newPhase)
-  }
+    setMode('record');
+  }, [editIndex, effectivePlanFoot, planTarget, planBrk]);
 
-  // ── Recording ──────────────────────────────────────────────────────────────
+  const enterPlan = useCallback(() => {
+    setEditIndex(null);
+    setMode('plan');
+  }, []);
 
-  function handleRecord() {
-    const clampedBP = Math.max(bpMin, Math.min(bpMax, resBP))
-    if (editIndex !== null) {
-      updateShot(editIndex, resFoot, resTarget, clampedBP, resFinish)
-      setEditIndexState(null)
-      setEditingIndex(null)
+  // ── Save shot ──────────────────────────────────────────────────────────────
+
+  const handleSave = useCallback(() => {
+    const planned = {
+      foot:   effectivePlanFoot,
+      target: planTarget,
+      brk:    planBrk,
+      finish: POCKET,
+    };
+    const actual = {
+      foot:   recFoot   ?? effectivePlanFoot,
+      target: recTarget ?? planTarget,
+      brk:    recBrk    ?? planBrk,
+      finish: recFinish,
+    };
+
+    if (editIndex != null) {
+      updateShot(editIndex, planned, actual);
+      setEditIndex(null);
     } else {
-      recordShot(resFoot, resTarget, clampedBP, resFinish)
+      recordShot(planned, actual);
     }
-    syncFromSuggestion()
-    setPhase('plan')
-    refresh()
+
+    // ── Post-save suggestion ────────────────────────────────────────────────
+    const lr     = State.laneRead;
+    const shots  = lr?.shots ?? [];
+    const breakpointBase = (sessionCfg?.patternLength ?? 42) - 31;
+
+    let nextTarget = planTarget;
+    let nextBrk    = planBrk;
+
+    if (shots.length === 1) {
+      // Exploration: first shot hit pocket near the rule-of-31 breakpoint base
+      const atBase   = Math.abs(actual.brk    - breakpointBase) <= CONSTANTS.BREAKPOINT_LEEWAY;
+      const atPocket = Math.abs(actual.finish  - POCKET)        <= 1;
+      if (atBase && atPocket) {
+        nextTarget = clamp(actual.target + 3, 1, 39);
+        nextBrk    = clamp(actual.brk    + 3, 1, 39);
+      } else if (State.suggestion) {
+        nextTarget = State.suggestion.target      ?? planTarget;
+        nextBrk    = State.suggestion.breakpoint  ?? planBrk;
+      }
+    } else if (State.suggestion) {
+      nextTarget = State.suggestion.target      ?? planTarget;
+      nextBrk    = State.suggestion.breakpoint  ?? planBrk;
+    }
+
+    setPlanTarget(nextTarget);
+    setPlanBrk(nextBrk);
+    setFootPinned(false);   // re-derive foot from new suggestion
+    setMode('plan');
+    refresh();
+  }, [
+    effectivePlanFoot, planTarget, planBrk,
+    recFoot, recTarget, recBrk, recFinish,
+    editIndex, sessionCfg, refresh,
+  ]);
+
+  // ── Edit / remove ──────────────────────────────────────────────────────────
+
+  const handleEdit = useCallback((index) => {
+    const history = getShotHistory();
+    const shot    = history.find(s => s.index === index);
+    if (!shot) return;
+    setRecFoot(shot.actual.foot);
+    setRecTarget(shot.actual.target);
+    setRecBrk(shot.actual.brk);
+    setRecFinish(shot.actual.finish);
+    setEditIndex(index);
+    setMode('record');
+    setDrawer(null);
+  }, []);
+
+  const handleRemove = useCallback((index) => {
+    removeShot(index);
+    refresh();
+  }, [refresh]);
+
+  // ── Export ────────────────────────────────────────────────────────────────
+
+  const handleExport = useCallback(() => {
+    const json = exportSessionJSON();
+    const blob = new Blob([json], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `lineup-session-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  // ── Setup screen ───────────────────────────────────────────────────────────
+
+  if (!sessionCfg) {
+    return (
+      <div className="lu-root">
+        <SetupScreen onStart={handleStart} onImport={handleImport} />
+      </div>
+    );
   }
 
-  // ── History edit / remove ──────────────────────────────────────────────────
+  // ── Main app ───────────────────────────────────────────────────────────────
 
-  function handleEdit(index) {
-    const shot = State.laneRead.shots[index]
-    setEditingIndex(index)
-    setEditIndexState(index)
-    syncFromShot(shot)
-    setPhase('result')
-    setOverlayOpen(true)
-  }
+  const history   = getShotHistory();
+  const balls     = getBalls();
+  const shotCount = history.length;
 
-  function handleRemove(index) {
-    removeShot(index)
-    setEditIndexState(null)
-    setEditingIndex(null)
-    syncFromSuggestion()
-    setPhase('plan')
-    refresh()
-  }
+  const planObj = {
+    foot:   effectivePlanFoot,
+    target: planTarget,
+    brk:    planBrk,
+    derived: planDerived,
+  };
 
-  // ── Ball management ────────────────────────────────────────────────────────
+  const resultObj = {
+    foot:   recFoot   ?? effectivePlanFoot,
+    target: recTarget ?? planTarget,
+    brk:    recBrk    ?? planBrk,
+    finish: recFinish,
+  };
 
-  function handleSwitchBall(ballId) {
-    switchBall(ballId)
-    syncFromSuggestion()
-    setEditIndexState(null)
-    setPhase('plan')
-    refresh()
-  }
+  const expectedBP = sessionCfg ? expectedBreakpoint({
+    foot:          resultObj.foot,
+    target:        resultObj.target,
+    patternLength: sessionCfg.patternLength,
+    ballOffset:    sessionCfg.ballOffset,
+  }) : null;
 
-  function handleAddBall(name, notes) {
-    addBall(name, notes)
-    syncFromSuggestion()
-    setEditIndexState(null)
-    setPhase('plan')
-    refresh()
-  }
-
-  // ── Wipe / restart ─────────────────────────────────────────────────────────
-
-  function handleWipeBall() {
-    wipeBallShots()
-    syncFromSuggestion()
-    setEditIndexState(null)
-    setPhase('plan')
-    refresh()
-  }
-
-  function handleWipeAll() {
-    wipeAllShots()
-    syncFromSuggestion()
-    setEditIndexState(null)
-    setPhase('plan')
-    refresh()
-  }
-
-  function handleRestart() {
-    setSessionStarted(false)
-    setOverlayOpen(false)
-    setPhase('plan')
-    setEditIndexState(null)
-    setHamburgerOpen(false)
-  }
-
-  // ── Export / import (in-session) ───────────────────────────────────────────
-
-  function handleExport() {
-    const json     = exportSessionJSON()
-    const blob     = new Blob([json], { type: 'application/json' })
-    const url      = URL.createObjectURL(blob)
-    const date     = new Date().toISOString().slice(0, 10)
-    const filename = `lineup-${date}-${CONSTANTS.PATTERN_LENGTH}ft.json`
-    const a        = document.createElement('a')
-    a.href = url; a.download = filename; a.click()
-    URL.revokeObjectURL(url)
-    setHamburgerOpen(false)
-  }
-
-  function handleInSessionImport(json) {
-    importSessionJSON(json)
-    syncFromSuggestion()
-    setEditIndexState(null)
-    setPhase('plan')
-    setHamburgerOpen(false)
-    refresh()
-  }
-
-  // ── Share URL copy ─────────────────────────────────────────────────────────
-
-  function handleCopyURL() {
-    const url = encodeSessionURL(
-      CONSTANTS.PATTERN_LENGTH, CONSTANTS.BALL_TO_SLIDE_FOOT, CONSTANTS.HANDEDNESS)
-    navigator.clipboard.writeText(url).catch(() => {})
-  }
-
-  // ── Render ─────────────────────────────────────────────────────────────────
-
-  const suggestion = State.suggestion
-  const shots      = sessionStarted ? getShotHistory()  : []
-  const balls      = sessionStarted ? getBalls()        : []
-
-  const sessionInfo = sessionStarted ? {
-    patternLength:  CONSTANTS.PATTERN_LENGTH,
-    ballToSlide:    CONSTANTS.BALL_TO_SLIDE_FOOT,
-    handedness:     CONSTANTS.HANDEDNESS,
-    activeBallName: State.activeBall()?.name || '—',
-  } : null
+  const headMeta = sessionCfg
+    ? `${sessionCfg.patternLength}ft · ${sessionCfg.hand}H · drift ${sessionCfg.drift}`
+    : '';
 
   return (
-    <div className="flex flex-col h-full">
-      {/* ── Setup modal ──────────────────────────────────────────────────── */}
-      {!sessionStarted && (
-        <SetupModal onStart={handleStart} onImport={handleImportSetup} />
+    <div className="lu-root">
+
+      {/* ── HEADER ── */}
+      <header className="lu-head">
+        <button className="lu-icon-btn" onClick={() => setDrawer('menu')} aria-label="Menu">
+          <span className="lu-hb-line" />
+          <span className="lu-hb-line" />
+          <span className="lu-hb-line" />
+        </button>
+        <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
+          <span className="lu-brand-mark sm" />
+          <span style={{ fontWeight:800, fontSize:14, letterSpacing:'-0.01em', color:'var(--lu-txt)' }}>
+            LineUp
+          </span>
+          <span style={{
+            color:'var(--lu-txt-3)', fontSize:10.5,
+            fontFamily:"'JetBrains Mono', monospace", letterSpacing:'0.04em',
+            whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
+          }}>
+            {headMeta}
+          </span>
+        </div>
+        <button className="lu-head-pill" onClick={() => setDrawer('history')} style={{
+          background:'var(--lu-bg-3)', border:'1px solid var(--lu-line)', borderRadius:999,
+          padding:'6px 10px', display:'flex', alignItems:'center', gap:6, cursor:'pointer',
+          fontFamily:'inherit', color:'var(--lu-txt)',
+        }}>
+          <span style={{ fontWeight:700, fontSize:13, fontFamily:"'JetBrains Mono', monospace" }}>
+            {shotCount}
+          </span>
+          <span style={{ fontSize:11, color:'var(--lu-txt-2)', letterSpacing:'0.04em' }}>shots</span>
+        </button>
+      </header>
+
+      {/* ── LANE ── */}
+      <div className="lu-lane-wrap">
+        <Lane
+          session={sessionCfg}
+          plan={planObj}
+          result={resultObj}
+          mode={mode}
+          on={laneOn}
+          tweaks={tweaks}
+        />
+      </div>
+
+      {/* ── TABS ── */}
+      <div className="lu-tabs">
+        <button className={`lu-tab${mode === 'plan' ? ' on' : ''}`} onClick={enterPlan}>
+          <span className="lu-tab-label">Plan</span>
+          <span className="lu-tab-sub">target · breakpoint · foot</span>
+        </button>
+        <button className={`lu-tab${mode === 'record' ? ' on' : ''}`} onClick={enterRecord}>
+          <span className="lu-tab-label">{editIndex != null ? 'Edit shot' : 'Record'}</span>
+          <span className="lu-tab-sub">
+            {editIndex != null ? `#${shotCount - editIndex}` : 'foot · target · BP · finish'}
+          </span>
+        </button>
+      </div>
+
+      {/* ── READOUTS ── */}
+      <div className="lu-readouts">
+        {mode === 'plan' ? (
+          <>
+            <Chip color="var(--lu-target)" label="Target"     value={planTarget} />
+            <Chip color="var(--lu-brk)"    label="Breakpoint" value={planBrk} />
+            <Chip color="var(--lu-stance)" label="Foot"       value={effectivePlanFoot} derived={!footPinned} />
+            <Chip color="#a98860"          label="Ball/Slide"
+                  value={`${Math.round(planDerived.ballStart)}/${Math.round(planDerived.slideFoot)}`}
+                  derived small />
+          </>
+        ) : (
+          <>
+            <Chip color="var(--lu-stance)" label="Foot"       value={resultObj.foot} />
+            <Chip color="var(--lu-target)" label="Target"     value={resultObj.target} />
+            <Chip color="var(--lu-brk)"    label="Breakpoint" value={resultObj.brk}
+                  hint={`exp ${expectedBP}`} />
+            <Chip color="var(--lu-finish)" label="Finish"     value={resultObj.finish} />
+          </>
+        )}
+      </div>
+
+      {/* ── ACTION ── */}
+      <div className="lu-action">
+        {mode === 'plan' ? (
+          <button className="lu-btn-primary" onClick={enterRecord}>
+            <span>Plan looks good →</span>
+            <span className="lu-btn-sub">Switch to Record after the throw</span>
+          </button>
+        ) : (
+          <button className="lu-btn-primary" onClick={handleSave}>
+            <span>{editIndex != null ? 'Save changes' : 'Save shot'}</span>
+            <span className="lu-btn-sub">
+              finish {resultObj.finish} · target {resultObj.target} · BP {resultObj.brk}
+            </span>
+          </button>
+        )}
+      </div>
+
+      {/* ── DRAWERS ── */}
+      {drawer === 'history' && (
+        <Drawer title="Shot history" onClose={() => setDrawer(null)} side="right">
+          <ShotHistory shots={history} onEdit={handleEdit} onRemove={handleRemove} />
+        </Drawer>
       )}
-
-      {/* ── App shell (hidden until session starts) ───────────────────── */}
-      {sessionStarted && (
-        <>
-          {/* Internal header */}
-          <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 bg-slate-950 border-b border-slate-800">
-            <div className="flex items-center gap-3">
-              <span className="text-green-400 font-bold text-sm tracking-tight">LineUp</span>
-              <span className="text-xs text-slate-500">
-                {sessionInfo.patternLength}ft · {sessionInfo.handedness === 'left' ? 'LH' : 'RH'}
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-slate-400 truncate max-w-28">{sessionInfo.activeBallName}</span>
-              <button
-                onClick={handleCopyURL}
-                title="Copy share URL"
-                className="text-slate-500 hover:text-slate-300 text-xs transition-colors"
-              >
-                ⬡
-              </button>
-              <button
-                onClick={() => setHamburgerOpen(true)}
-                aria-label="Menu"
-                className="flex flex-col gap-1 p-1"
-              >
-                {[0,1,2].map(i => (
-                  <span key={i} className="block w-5 h-0.5 bg-slate-400 rounded-full" />
-                ))}
-              </button>
-            </div>
-          </div>
-
-          {/* Suggestion row */}
-          {suggestion && (
-            <div className="flex-shrink-0">
-              <SuggestionRow
-                suggestion={suggestion}
-                isExploration={isExploration}
-                onTap={() => setOverlayOpen(v => !v)}
-                overlayOpen={overlayOpen}
-              />
-            </div>
-          )}
-
-          {/* History — scrollable middle area */}
-          <ShotHistory
-            shots={shots}
-            onEdit={handleEdit}
-            onRemove={handleRemove}
+      {drawer === 'menu' && (
+        <Drawer title="Menu" onClose={() => setDrawer(null)} side="left">
+          <HamburgerMenu
+            balls={balls}
+            tweaks={tweaks}
+            setTweak={(k, v) => setTweaks(t => ({ ...t, [k]: v }))}
+            onSwitchBall={(id) => { switchBall(id); refresh(); }}
+            onAddBall={(name, notes) => { addBall(name, notes); refresh(); }}
+            onWipeBall={() => { wipeBallShots(); refresh(); }}
+            onWipeAll={() => { wipeAllShots(); refresh(); }}
+            onRestart={handleRestart}
+            onExport={handleExport}
+            onImport={handleImport}
+            onClose={() => setDrawer(null)}
           />
-
-          {/* Slider overlay — fixed-height at the bottom */}
-          <div className="flex-shrink-0">
-            <SliderOverlay
-              open={overlayOpen}
-              phase={phase}
-              onPhaseChange={handlePhaseChange}
-              onRecord={handleRecord}
-              editIndex={editIndex}
-              planBP={planBP}     setPlanBP={setPlanBP}
-              planTarget={planTarget} setPlanTarget={setPlanTarget}
-              resFoot={resFoot}   setResFoot={setResFoot}
-              resTarget={resTarget} setResTarget={setResTarget}
-              resBP={resBP}       setResBP={setResBP}
-              resFinish={resFinish} setResFinish={setResFinish}
-              planDerived={planDerived}
-              expectedBP={expectedBP}
-              bpMin={bpMin}
-              bpMax={bpMax}
-              rtl={rtl}
-            />
-          </div>
-        </>
+        </Drawer>
       )}
-
-      {/* Hamburger menu */}
-      <HamburgerMenu
-        open={hamburgerOpen}
-        onClose={() => setHamburgerOpen(false)}
-        onSwitchBall={handleSwitchBall}
-        onAddBall={handleAddBall}
-        onWipeBall={handleWipeBall}
-        onWipeAll={handleWipeAll}
-        onRestart={handleRestart}
-        onExport={handleExport}
-        onImport={handleInSessionImport}
-        balls={balls}
-      />
     </div>
-  )
+  );
+}
+
+// ─── Chip readout ─────────────────────────────────────────────────────────────
+
+function Chip({ color, label, value, hint, derived, small }) {
+  return (
+    <div className="lu-chip">
+      <span className="lu-chip-bar" style={{ background: color }} />
+      <div className="lu-chip-body">
+        <div className="lu-chip-label">
+          {label}
+          {derived && <span className="lu-chip-tag">derived</span>}
+        </div>
+        <div className={`lu-chip-value${small ? ' sm' : ''}`}>{value}</div>
+        {hint && (
+          <div style={{ fontSize:9.5, color:'var(--lu-txt-3)', fontFamily:"'JetBrains Mono', monospace" }}>
+            {hint}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }

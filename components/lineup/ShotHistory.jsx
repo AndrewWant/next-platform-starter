@@ -1,111 +1,127 @@
-'use client'
+'use client';
 
-import { useRef } from 'react'
+const POCKET = 17;
 
-function ShotRow({ shot, onEdit, onRemove }) {
-  const timerRef = useRef(null)
-  const rowRef   = useRef(null)
-
-  function startPress() {
-    timerRef.current = setTimeout(() => {
-      rowRef.current?.classList.add('ring-1', 'ring-amber-500/50')
-      rowRef.current?.querySelector('.edit-controls')?.classList.remove('hidden')
-    }, 600)
-  }
-
-  function cancelPress() {
-    clearTimeout(timerRef.current)
-  }
-
-  function dismissControls() {
-    rowRef.current?.classList.remove('ring-1', 'ring-amber-500/50')
-    rowRef.current?.querySelector('.edit-controls')?.classList.add('hidden')
+/**
+ * Shot history list for the drawer.
+ * shots = array from getShotHistory():
+ *   { shotNumber, actual: {foot,target,brk,finish,boardsCrossed}, planned, index }
+ */
+export default function ShotHistory({ shots, onEdit, onRemove }) {
+  if (!shots.length) {
+    return (
+      <div style={{ textAlign:'center', padding:'30px 10px', color:'var(--lu-txt-2)', fontSize:13.5, lineHeight:1.5 }}>
+        <p>No shots recorded yet.</p>
+        <p style={{ color:'var(--lu-txt-3)', marginTop:4, fontSize:12 }}>
+          Switch to <strong style={{ color:'var(--lu-target)' }}>Record</strong>,
+          set foot · target · BP · finish, then save.
+        </p>
+      </div>
+    );
   }
 
   return (
-    <div
-      ref={rowRef}
-      className="bg-slate-900 rounded-xl px-4 py-3 space-y-2 select-none"
-      onMouseDown={startPress}
-      onMouseUp={cancelPress}
-      onMouseLeave={cancelPress}
-      onTouchStart={startPress}
-      onTouchEnd={cancelPress}
-      onTouchMove={cancelPress}
-    >
-      <div className="flex items-start justify-between">
-        <span className="text-xs font-bold text-slate-500 tabular-nums">#{shot.shotNumber}</span>
-        <span className="text-xs text-slate-600 ml-auto">hold to edit</span>
-      </div>
+    <ol style={{ listStyle:'none', padding:0, margin:0, display:'flex', flexDirection:'column', gap:8 }}>
+      {shots.map(shot => {
+        const { actual, planned, shotNumber, index } = shot;
+        const miss = actual.finish - POCKET;
+        return (
+          <li key={index} style={{
+            background:'var(--lu-bg-2)', border:'1px solid var(--lu-line)',
+            borderRadius:10, overflow:'hidden',
+          }}>
+            {/* Actual row — tap to edit */}
+            <button onClick={() => onEdit(index)} style={{
+              width:'100%', background:'transparent', border:'none', color:'var(--lu-txt)',
+              display:'grid', gridTemplateColumns:'28px 1fr auto',
+              alignItems:'center', gap:6, padding:'8px 4px 6px 8px',
+              textAlign:'left', cursor:'pointer', fontFamily:'inherit',
+            }}>
+              <span style={{
+                fontFamily:"'JetBrains Mono', monospace",
+                fontSize:11, color:'var(--lu-txt-3)', fontWeight:600,
+              }}>
+                #{shotNumber}
+              </span>
 
-      <div className="grid grid-cols-5 gap-1">
-        {[
-          { label: 'Foot',   value: shot.foot },
-          { label: 'Start',  value: shot.ballStart },
-          { label: 'Target', value: shot.target },
-          { label: 'BP',     value: shot.breakpoint },
-          { label: 'Finish', value: shot.finishPosition },
-        ].map(({ label, value }) => (
-          <div key={label} className="text-center">
-            <div className="text-[10px] text-slate-600 uppercase tracking-wider">{label}</div>
-            <div className="text-base font-mono font-semibold text-white">{value}</div>
-          </div>
-        ))}
-      </div>
+              <span style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:4, minWidth:0 }}>
+                <ShotCell value={actual.foot}   label="foot" color="var(--lu-stance)" />
+                <ShotCell value={actual.target} label="tgt"  color="var(--lu-target)" />
+                <ShotCell value={actual.brk}    label="bp"   color="var(--lu-brk)"    />
+                <ShotCell value={actual.finish} label="fin"  color="var(--lu-finish)" />
+              </span>
 
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-slate-500">
-          Boards crossed: <span className="text-slate-300 font-mono">{shot.boardsCrossed}</span>
-        </span>
-      </div>
+              <MissBadge miss={miss} />
+            </button>
 
-      <div className="edit-controls hidden flex gap-2 pt-1 border-t border-slate-800">
-        <button
-          onClick={e => { e.stopPropagation(); onEdit(shot.index); dismissControls() }}
-          className="flex-1 py-1.5 text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
-        >
-          Edit
-        </button>
-        <button
-          onClick={e => { e.stopPropagation(); onRemove(shot.index); dismissControls() }}
-          className="flex-1 py-1.5 text-xs font-semibold bg-red-900/50 hover:bg-red-800/50 text-red-300 rounded-lg transition-colors"
-        >
-          Remove
-        </button>
-        <button
-          onClick={e => { e.stopPropagation(); dismissControls() }}
-          className="px-3 py-1.5 text-xs font-semibold bg-slate-800 text-slate-400 rounded-lg transition-colors"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  )
+            {/* Planned row — dimmed, shown if planned data exists */}
+            {planned && (
+              <div style={{
+                display:'grid', gridTemplateColumns:'28px 1fr auto',
+                alignItems:'center', gap:6,
+                padding:'0 4px 6px 8px',
+                borderTop:'1px solid var(--lu-line)',
+              }}>
+                <span style={{
+                  fontFamily:"'JetBrains Mono', monospace", fontSize:9,
+                  color:'var(--lu-txt-3)', letterSpacing:'0.06em',
+                }}>
+                  plan
+                </span>
+                <span style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:4, opacity:0.55 }}>
+                  <ShotCell value={planned.foot}   label="foot" color="var(--lu-stance)" small />
+                  <ShotCell value={planned.target} label="tgt"  color="var(--lu-target)" small />
+                  <ShotCell value={planned.brk}    label="bp"   color="var(--lu-brk)"    small />
+                  <ShotCell value={planned.finish} label="fin"  color="var(--lu-finish)" small />
+                </span>
+                <button onClick={() => onRemove(index)} aria-label="Remove shot" style={{
+                  background:'transparent', border:'none', color:'var(--lu-txt-3)',
+                  fontSize:18, width:30, cursor:'pointer', fontFamily:'inherit',
+                }}>
+                  ×
+                </button>
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
 }
 
-export default function ShotHistory({ shots, onEdit, onRemove }) {
-  if (shots.length === 0) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-center py-16 px-6">
-          <div className="text-4xl mb-3">🎳</div>
-          <p className="text-slate-500 text-sm">No shots recorded yet.</p>
-          <p className="text-slate-600 text-xs mt-1">Plan your line, then record the result.</p>
-        </div>
-      </div>
-    )
-  }
-
+function ShotCell({ value, label, color, small }) {
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-      {shots.map(shot => (
-        <ShotRow
-          key={`${shot.index}-${shot.shotNumber}`}
-          shot={shot}
-          onEdit={onEdit}
-          onRemove={onRemove}
-        />
-      ))}
-    </div>
-  )
+    <span style={{ display:'flex', flexDirection:'column', alignItems:'flex-start', lineHeight:1.1, minWidth:0 }}>
+      <b style={{
+        fontFamily:"'JetBrains Mono', monospace",
+        fontSize: small ? 11 : 14, fontWeight:700, color,
+      }}>
+        {value ?? '—'}
+      </b>
+      <span style={{
+        fontSize:9.5, color:'var(--lu-txt-3)',
+        fontFamily:"'JetBrains Mono', monospace", letterSpacing:'0.04em',
+      }}>
+        {label}
+      </span>
+    </span>
+  );
+}
+
+function MissBadge({ miss }) {
+  const isPocket = miss === 0;
+  const isHigh   = miss > 0;
+  const style = isPocket
+    ? { color:'#1c0e02', background:'var(--lu-finish)', border:'none' }
+    : isHigh
+      ? { color:'var(--lu-brk)',    background:'rgba(58,134,212,0.12)', border:'1px solid rgba(58,134,212,0.3)' }
+      : { color:'var(--lu-target)', background:'rgba(238,122,46,0.12)', border:'1px solid rgba(238,122,46,0.3)' };
+  return (
+    <span style={{
+      fontFamily:"'JetBrains Mono', monospace", fontSize:10, fontWeight:700, letterSpacing:'0.06em',
+      padding:'4px 6px', borderRadius:5, whiteSpace:'nowrap', ...style,
+    }}>
+      {isPocket ? 'POCKET' : (isHigh ? `+${miss}` : `${miss}`)}
+    </span>
+  );
 }

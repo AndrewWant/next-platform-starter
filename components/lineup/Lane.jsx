@@ -242,21 +242,28 @@ export default function Lane({ session, plan, result, mode, on, tweaks }) {
     : null;
   const crosshairX = crosshairBoard != null ? bowlerX(crosshairBoard, hand) : null;
 
-  // ── Ball path Bézier ─────────────────────────────────────────────────────
+  // ── Ball path: piecewise through all key points ──────────────────────────
+  // Segment 1: straight lines release→target→breakpoint (oil zone, ball rolls straight)
+  // Segment 2: quadratic Bézier from breakpoint→finish (hook after oil ends)
+  // Control point for the hook extends the travel direction (target→brk) past the breakpoint
+  // so the curve departs smoothly in the ball's direction of travel before hooking.
   const ballPath = (() => {
     if (!tweaks.showPath) return null;
-    const planFinish = 17;
-    const finishBoard = mode === 'record' && finish != null ? finish : planFinish;
+    const finishBoard = mode === 'record' && finish != null ? finish : 17;
     const releaseBd = (mode === 'plan') ? ballRelease : (result.foot - session.ballOffset);
-    const sx = bowlerX(releaseBd, hand);
-    const sy = FOUL_Y;
-    const tx = bowlerX(target,    hand);
-    const ty = ARROW_LINE_Y;
-    const bx = bowlerX(brk,       hand);
-    const by = oilTop;
+    const sx = bowlerX(releaseBd,  hand);
+    const tx = bowlerX(target,     hand);
+    const bx = bowlerX(brk,        hand);
     const fx = bowlerX(finishBoard, hand);
-    const fy = PIN_ROW_Y[0];
-    return `M ${sx} ${sy} C ${tx} ${ty}, ${bx} ${by}, ${fx} ${fy}`;
+    // Travel direction from target to breakpoint; extend past brk for smooth hook departure
+    const ddx = bx - tx;
+    const ddy = oilTop - ARROW_LINE_Y;
+    const approachLen = Math.sqrt(ddx * ddx + ddy * ddy) || 1;
+    const hookLen     = Math.sqrt((fx - bx) ** 2 + (PIN_ROW_Y[0] - oilTop) ** 2);
+    const k           = (hookLen * 0.55) / approachLen;
+    const qx = bx + ddx * k;
+    const qy = oilTop + ddy * k;
+    return `M ${sx} ${FOUL_Y} L ${tx} ${ARROW_LINE_Y} L ${bx} ${oilTop} Q ${qx} ${qy} ${fx} ${PIN_ROW_Y[0]}`;
   })();
 
   return (
@@ -396,9 +403,10 @@ export default function Lane({ session, plan, result, mode, on, tweaks }) {
       {/* Ball path */}
       {ballPath && (
         <g>
-          <path d={ballPath} fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth={5} strokeLinecap="round" />
-          <path d={ballPath} fill="none" stroke={C.target} strokeWidth={2.2}
-                strokeLinecap="round" strokeDasharray="6 4" opacity={0.92} />
+          <path d={ballPath} fill="none" stroke="rgba(0,0,0,0.65)"
+                strokeWidth={7} strokeLinecap="round" strokeLinejoin="round" />
+          <path d={ballPath} fill="none" stroke="rgba(255,255,255,0.9)"
+                strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
         </g>
       )}
 
@@ -478,11 +486,16 @@ export default function Lane({ session, plan, result, mode, on, tweaks }) {
         const labelY = activeZone === 'brk' ? y1 + 14 : y2 - 6;
         return (
           <g pointerEvents="none">
-            {/* vertical line */}
+            {/* shadow line for contrast against any lane surface */}
             <line x1={crosshairX} y1={y1} x2={crosshairX} y2={y2}
-                  stroke={color} strokeWidth={1.5} opacity={0.9} strokeDasharray="4 3" />
+                  stroke="rgba(0,0,0,0.55)" strokeWidth={5} />
+            {/* coloured crosshair line */}
+            <line x1={crosshairX} y1={y1} x2={crosshairX} y2={y2}
+                  stroke={color} strokeWidth={2.5} opacity={1} strokeDasharray="7 4" />
             {/* pill label */}
-            <rect x={crosshairX - 12} y={labelY - 10} width={24} height={16} rx={8}
+            <rect x={crosshairX - 14} y={labelY - 11} width={28} height={18} rx={9}
+                  fill="rgba(0,0,0,0.65)" />
+            <rect x={crosshairX - 13} y={labelY - 10} width={26} height={16} rx={8}
                   fill={color} opacity={0.95} />
             <text x={crosshairX} y={labelY + 1.5}
                   textAnchor="middle" fontFamily="'JetBrains Mono', monospace"

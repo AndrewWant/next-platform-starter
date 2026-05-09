@@ -125,7 +125,7 @@ export default function LineupApp() {
     target: (b) => {
       if (mode === 'plan') {
         setPlanTarget(b);
-        if (!footPinned) setFootPinned(false); // keep derived
+        setFootPinned(false); // revert foot to derived when target changes
       } else {
         setRecTarget(b);
       }
@@ -133,7 +133,7 @@ export default function LineupApp() {
     brk: (b) => {
       if (mode === 'plan') {
         setPlanBrk(b);
-        if (!footPinned) setFootPinned(false);
+        setFootPinned(false); // revert foot to derived when BP changes
       } else {
         setRecBrk(b);
       }

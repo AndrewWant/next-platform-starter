@@ -167,7 +167,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks }) {
   // Active values by mode
   const target  = mode === 'plan' ? plan.target : result.target;
   const brk     = mode === 'plan' ? plan.brk    : result.brk;
-  const stanceB = mode === 'plan' ? plan.derived.setupFoot : Math.round(result.foot - session.drift);
+  const stanceB = mode === 'plan' ? plan.foot : Math.round(result.foot - session.drift);
   const finish  = result.finish;
 
   // Ball release at foul line (for the Bézier path start)

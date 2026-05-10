@@ -115,7 +115,7 @@ Potential enhancements discussed but not yet implemented. Ordered roughly by val
 
 ## Technical Debt / Quality
 
-- **End-to-end testing**: The redesign has not been tested against a live Supabase session. Priority before merging to `main`.
+- **Role-based access enforcement**: `user_app_access.role` is now a typed `app_role` enum (viewer / user / admin). Currently middleware admits any non-null row equally. Future work: enforce viewer = read-only in server actions and UI; gate admin-only features (e.g. bulk data management, pattern library curation) behind admin check. Schema and enum are already in place — this is purely application-layer enforcement.
 - **Actual breakpoint input**: Currently breakpoint is always derived from foot+target. An "actual BP" adjustment (for balls that hook early) would improve `boardsCrossed` accuracy. Low priority until confirmed needed in testing.
 - **Import flow + DB sync**: Importing a JSON session currently only restores in-memory state; it does not create DB rows. If import is used regularly, it should optionally persist to Supabase.
 - **Error handling in server actions**: Currently all DB errors are silently swallowed in fire-and-forget calls. A lightweight error toast would improve observability.

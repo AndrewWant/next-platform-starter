@@ -190,8 +190,8 @@ export default function Lane({ session, plan, result, mode, on, tweaks }) {
   }, []);
 
   const zoneFromY = useCallback((svgY) => {
-    if (svgY < PIN_DECK_H)  return mode === 'record' ? 'finish' : null;
-    if (svgY < ARROW_LINE_Y) return 'brk';
+    if (svgY < PIN_DECK_H)   return mode === 'record' ? 'finish' : null;
+    if (svgY < ARROW_LINE_Y) return null;    // brk zone: display only, never interactive
     if (svgY < FOUL_Y)       return 'target';
     if (svgY >= APPROACH_Y0) return 'foot';
     return null;

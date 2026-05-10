@@ -102,6 +102,17 @@ Potential enhancements discussed but not yet implemented. Ordered roughly by val
 
 ---
 
+### 12. Full ball catalog entry (manufacturer, weight, cover stock)
+**Value:** Medium — `balls` table already has `manufacturer`, `weight`, `cover_stock_type`, and `serial_number` columns; they're just nullable because the UI never captures them.  
+**Complexity:** Low — extend the "New ball" form in SetupScreen with a few extra fields.  
+**Implementation notes:**
+- Add `manufacturer` (text), `weight` (numeric, e.g. 15.0), and `cover_stock_type` (solid/pearl/hybrid/urethane) to the new-ball form in SetupScreen
+- `serial_number` optional (useful for insurance / multi-ball bags) — add as a collapsible "advanced" row
+- `cover_stock_type` is most useful for lane-read analysis (pearl vs solid behaves differently on oil transitions) and should be surfaced in the ball list in HamburgerMenu
+- Update `createBall` in `actions.js` to pass these fields (signature already accepts them; they're just never populated today)
+
+---
+
 ## Technical Debt / Quality
 
 - **End-to-end testing**: The redesign has not been tested against a live Supabase session. Priority before merging to `main`.

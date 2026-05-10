@@ -18,13 +18,13 @@ import HamburgerMenu from '../../../components/lineup/HamburgerMenu';
 // ─── Plan geometry ────────────────────────────────────────────────────────────
 
 // Given target and breakpoint, derive all other values for a planned line.
-function computePlan({ target, brk, patternLength, ballOffset, drift }) {
-  const slope       = (brk - target) / (patternLength - 15);
-  const ballRelease = target - 15 * slope;
+// Uses the same 1.68 move table ratio as the drag handlers for consistency.
+function computePlan({ target, brk, ballOffset, drift }) {
+  const ballRelease = (target - brk) * 1.68 + brk;  // ball position at foul line (move table)
   const slideFoot   = ballRelease + ballOffset;
   const setupFoot   = Math.round(slideFoot - drift);
-  const ballStart   = setupFoot - ballOffset;
-  return { ballRelease, slideFoot, setupFoot, ballStart, slope };
+  const ballStart   = ballRelease;
+  return { ballRelease, slideFoot, setupFoot, ballStart };
 }
 
 // Expected breakpoint hint for the record-mode readout (setup foot → geometric brk).
@@ -110,13 +110,12 @@ export default function LineupApp() {
   // ── Derived plan values ────────────────────────────────────────────────────
 
   const planDerived = useMemo(() => {
-    if (!sessionCfg) return { setupFoot: 20, slideFoot: 20, ballStart: 15, ballRelease: 15, slope: 0 };
+    if (!sessionCfg) return { setupFoot: 20, slideFoot: 20, ballStart: 15, ballRelease: 15 };
     return computePlan({
-      target:        planTarget,
-      brk:           planBrk,
-      patternLength: sessionCfg.patternLength,
-      ballOffset:    sessionCfg.ballOffset,
-      drift:         sessionCfg.drift,
+      target:     planTarget,
+      brk:        planBrk,
+      ballOffset: sessionCfg.ballOffset,
+      drift:      sessionCfg.drift,
     });
   }, [planTarget, planBrk, sessionCfg]);
 

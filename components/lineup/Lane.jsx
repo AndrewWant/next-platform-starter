@@ -458,9 +458,9 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
         const cx = bowlerX(target, hand);
         const isActive = activeZone === 'target';
         const r = isActive ? 15 : 8.5;
-        // When active: pill to the right of the halo (r=22); when idle: pill below
-        const pillCx = isActive ? Math.min(cx + 22 + 4 + 11, W_LANE - 14) : cx;
-        const pillCy = isActive ? ARROW_LINE_Y : ARROW_LINE_Y + 20;
+        // When active: pill floats ABOVE the fingertip; when idle: pill below
+        const pillCx = cx;
+        const pillCy = isActive ? ARROW_LINE_Y - 22 - 10 : ARROW_LINE_Y + 20;
         return (
           <g>
             {isActive && <circle cx={cx} cy={ARROW_LINE_Y} r={22} fill={C.target} opacity={0.18} />}
@@ -532,7 +532,9 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
         const isActive = activeZone === 'foot_slide';
         const cx = bowlerX(slideB, hand);
         const rw = BOARD_W * (isActive ? 3 : 2.2);
-        const pillCx = Math.min(cx + rw / 2 + 4 + 11, W_LANE - 14);
+        // Active: pill above the marker; idle: pill to the right
+        const pillCx = isActive ? cx : Math.min(cx + rw / 2 + 4 + 11, W_LANE - 14);
+        const pillCy = isActive ? SLIDE_MARKER_Y - 11 - 10 : SLIDE_MARKER_Y;
         return (
           <g opacity={isPlan ? 0.55 : 1}>
             {isActive && (
@@ -545,7 +547,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
                   fill={isPlan ? 'none' : C.stance}
                   stroke={C.stance} strokeWidth={isActive ? 2.5 : 2}
                   strokeDasharray={isPlan ? '4 3' : '0'} />
-            <MarkerPill cx={pillCx} cy={SLIDE_MARKER_Y} label={slideB} color={C.stance} />
+            <MarkerPill cx={pillCx} cy={pillCy} label={slideB} color={C.stance} />
           </g>
         );
       })()}
@@ -556,7 +558,9 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
         const cx  = bowlerX(stanceB, hand);
         const rcy = APPROACH_DOT_Y + 23;
         const rw  = BOARD_W * (isActive ? 3 : 2.2);
-        const pillCx = Math.min(cx + rw / 2 + 4 + 11, W_LANE - 14);
+        // Active: pill above the marker; idle: pill to the right
+        const pillCx = isActive ? cx : Math.min(cx + rw / 2 + 4 + 11, W_LANE - 14);
+        const pillCy = isActive ? rcy - 11 - 10 : rcy;
         return (
           <g opacity={0.9}>
             {isActive && (
@@ -569,7 +573,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
                   fill="none" stroke={C.stance}
                   strokeWidth={isActive ? 2.5 : 1.8}
                   strokeDasharray={isActive ? '0' : '5 3'} />
-            <MarkerPill cx={pillCx} cy={rcy} label={stanceB} color={C.stance} />
+            <MarkerPill cx={pillCx} cy={pillCy} label={stanceB} color={C.stance} />
           </g>
         );
       })()}

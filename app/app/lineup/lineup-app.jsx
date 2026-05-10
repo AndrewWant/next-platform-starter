@@ -30,7 +30,7 @@ const POCKET = 17;
 
 const TWEAK_DEFAULTS = {
   showPinNumbers:    true,
-  showPath:          false,
+  showPath:          true,
   showApproachDots:  true,
   markerContrast:    0.6,
 };

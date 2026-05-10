@@ -190,7 +190,7 @@ export default function HamburgerMenu({
       {/* Session */}
       <section>
         <h4 style={S.secHead}>Session</h4>
-        <button style={S.menuBtn(false)} onClick={() => { onViewSessions?.(); onClose(); }}>
+        <button style={S.menuBtn(false)} onClick={() => { onClose(); onViewSessions?.(); }}>
           Past sessions
         </button>
         <button style={S.menuBtn(false)} onClick={() => { onExport(); onClose(); }}>

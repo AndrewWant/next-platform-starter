@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useReducer, useCallback, useMemo } from 'react';
+import { useState, useReducer, useCallback, useMemo, useEffect, useRef } from 'react';
 import { CONSTANTS, initSession } from '../../../lib/lineup/constants';
 import { LaneRead } from '../../../lib/lineup/models';
 import {
@@ -14,6 +14,13 @@ import Drawer      from '../../../components/lineup/Drawer';
 import SetupScreen from '../../../components/lineup/SetupScreen';
 import ShotHistory from '../../../components/lineup/ShotHistory';
 import HamburgerMenu from '../../../components/lineup/HamburgerMenu';
+import {
+  getUserProfile, upsertUserProfile,
+  getBalls as getBallsCatalog, createBall,
+  createSession as createDbSession,
+  addBallToSession,
+  saveShot as saveDbShot,
+} from './actions';
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const POCKET = 17;
@@ -39,6 +46,18 @@ export default function LineupApp() {
   const [drawer,     setDrawer]     = useState(null);   // 'history' | 'menu' | null
   const [tweaks,     setTweaks]     = useState(TWEAK_DEFAULTS);
 
+  // ── Supabase persistence ───────────────────────────────────────────────────
+  const [userProfile,   setUserProfile]   = useState(null);
+  const [ballCatalog,   setBallCatalog]   = useState([]);
+  const [dbSessionId,   setDbSessionId]   = useState(null);
+  const [dbLineupBallId, setDbLineupBallId] = useState(null);
+  const dbShotCountRef = useRef(0); // tracks how many shots have been persisted
+
+  useEffect(() => {
+    getUserProfile().then(p => { if (p) setUserProfile(p); }).catch(() => {});
+    getBallsCatalog().then(b => setBallCatalog(b)).catch(() => {});
+  }, []);
+
   // Plan: foot and target are the two independent inputs.
   // Breakpoint is always derived: LaneRead.expectedBreakpoint(slideFoot, target).
   const [planFoot,   setPlanFoot]   = useState(15);
@@ -57,13 +76,42 @@ export default function LineupApp() {
     setSessionCfg(cfg);
     setMode('plan');
     setEditIndex(null);
+    dbShotCountRef.current = 0;
     // Initialise foot from move table: start at target=10, rule-of-31 breakpoint
     const brkBase       = clamp(cfg.patternLength - 31, 1, 39);
     const slideFootInit = LaneRead.footFromTargetAndBreakpoint(10, brkBase).foot;
     setPlanFoot(clamp(Math.round(slideFootInit - cfg.drift), 1, 39));
     setPlanTarget(10);
     refresh();
-  }, [refresh]);
+
+    // Persist to Supabase (fire-and-forget — in-memory state is source of truth)
+    const hand = cfg.hand === 'R' ? 'R' : 'L';
+    Promise.all([
+      upsertUserProfile({ hand, ball_to_slide_foot: cfg.ballOffset, drift: cfg.drift }),
+      createDbSession({
+        pattern_name:     cfg.patternLabel || null,
+        pattern_length:   cfg.patternLength,
+        hand,
+        ball_to_slide_foot: cfg.ballOffset,
+        drift:            cfg.drift,
+      }),
+    ]).then(([, sessId]) => {
+      setDbSessionId(sessId);
+      // Find or create ball in catalog
+      const existingBall = cfg.ballId
+        ? ballCatalog.find(b => b.id === cfg.ballId)
+        : ballCatalog.find(b => b.name.toLowerCase() === (cfg.ballName || '').toLowerCase());
+      const ballPromise = existingBall
+        ? Promise.resolve(existingBall)
+        : createBall({ name: cfg.ballName || 'Ball 1', notes: cfg.ballNotes || null, surface: cfg.surface || null });
+      return ballPromise.then(ball => {
+        if (!existingBall) setBallCatalog(prev => [...prev, ball]);
+        return addBallToSession({ session_id: sessId, ball_id: ball.id, surface: cfg.surface || null, notes: cfg.ballNotes || null });
+      });
+    }).then(lbId => {
+      setDbLineupBallId(lbId);
+    }).catch(() => {});
+  }, [refresh, ballCatalog]);
 
   const handleImport = useCallback((json) => {
     importSessionJSON(json);
@@ -100,6 +148,9 @@ export default function LineupApp() {
     setSessionCfg(null);
     setMode('plan');
     setEditIndex(null);
+    setDbSessionId(null);
+    setDbLineupBallId(null);
+    dbShotCountRef.current = 0;
   }, []);
 
   // ── Derived plan values ────────────────────────────────────────────────────
@@ -170,6 +221,24 @@ export default function LineupApp() {
       setEditIndex(null);
     } else {
       recordShot(planned, actual);
+      // Persist shot to Supabase (fire-and-forget)
+      if (dbSessionId && dbLineupBallId) {
+        dbShotCountRef.current += 1;
+        const shotNum = dbShotCountRef.current;
+        saveDbShot({
+          session_id:         dbSessionId,
+          lineup_ball_id:     dbLineupBallId,
+          shot_number:        shotNum,
+          planned_foot:       planned.foot,
+          planned_target:     planned.target,
+          planned_breakpoint: planned.brk,
+          actual_foot:        actual.foot,
+          actual_target:      actual.target,
+          actual_breakpoint:  actual.brk,
+          actual_finish:      actual.finish,
+          notes:              null,
+        }).catch(() => {});
+      }
     }
 
     // ── Post-save suggestion ────────────────────────────────────────────────
@@ -245,7 +314,14 @@ export default function LineupApp() {
   if (!sessionCfg) {
     return (
       <div className="lu-root">
-        <SetupScreen onStart={handleStart} onImport={handleImport} />
+        <SetupScreen
+          onStart={handleStart}
+          onImport={handleImport}
+          ballCatalog={ballCatalog}
+          defaultHand={userProfile?.hand ?? 'R'}
+          defaultBallOffset={userProfile?.ball_to_slide_foot ?? 5}
+          defaultDrift={userProfile?.drift ?? 2}
+        />
       </div>
     );
   }

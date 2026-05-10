@@ -1,32 +1,61 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
-/**
- * Full-page setup screen. Calls onStart(cfg) with:
- *   { patternLength, patternLabel, ballOffset, drift, hand, ballName, ballNotes }
- * Calls onImport(jsonString) when the user imports a saved session.
- */
-export default function SetupScreen({ onStart, onImport }) {
+const SURFACE_OPTIONS = ['180', '360', '500', '1000', '2000', '4000', 'Compound', 'Polish'];
+
+export default function SetupScreen({
+  onStart, onImport,
+  ballCatalog = [],
+  defaultHand = 'R',
+  defaultBallOffset = 5,
+  defaultDrift = 2,
+}) {
   const [patternLength, setPatternLength] = useState(42);
   const [patternLabel,  setPatternLabel]  = useState('');
-  const [ballOffset,    setBallOffset]    = useState(5);
-  const [drift,         setDrift]         = useState(2);
-  const [hand,          setHand]          = useState('R');
-  const [ballName,      setBallName]      = useState('');
-  const [ballNotes,     setBallNotes]     = useState('');
+  const [ballOffset,    setBallOffset]    = useState(defaultBallOffset);
+  const [drift,         setDrift]         = useState(defaultDrift);
+  const [hand,          setHand]          = useState(defaultHand);
+
+  // Ball selection: 'existing' or 'new'
+  const [ballMode,  setBallMode]  = useState(ballCatalog.length > 0 ? 'existing' : 'new');
+  const [ballId,    setBallId]    = useState(ballCatalog[0]?.id ?? null);
+  const [ballName,  setBallName]  = useState('');
+  const [ballNotes, setBallNotes] = useState('');
+  const [surface,   setSurface]   = useState('');
+
+  // Keep ballMode in sync when catalog loads asynchronously
+  useEffect(() => {
+    if (ballCatalog.length > 0 && ballMode === 'new' && !ballName) {
+      setBallMode('existing');
+      setBallId(ballCatalog[0].id);
+    }
+  }, [ballCatalog]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pre-fill defaults when they arrive from the profile
+  useEffect(() => { setBallOffset(defaultBallOffset); }, [defaultBallOffset]);
+  useEffect(() => { setDrift(defaultDrift); }, [defaultDrift]);
+  useEffect(() => { setHand(defaultHand); }, [defaultHand]);
 
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
-  const submit = () => onStart({
-    patternLength: clamp(parseInt(patternLength, 10) || 42, 20, 60),
-    patternLabel:  patternLabel.trim(),
-    ballOffset:    clamp(parseFloat(ballOffset)    || 5,  0, 15),
-    drift:         clamp(parseFloat(drift)         || 0, -6, 10),
-    hand,
-    ballName:  ballName.trim()  || 'Ball 1',
-    ballNotes: ballNotes.trim(),
-  });
+  const submit = () => {
+    const selectedBall = ballMode === 'existing'
+      ? ballCatalog.find(b => b.id === ballId)
+      : null;
+
+    onStart({
+      patternLength: clamp(parseInt(patternLength, 10) || 42, 20, 60),
+      patternLabel:  patternLabel.trim(),
+      ballOffset:    clamp(parseFloat(ballOffset)    || 5,  0, 15),
+      drift:         clamp(parseFloat(drift)         || 0, -6, 10),
+      hand,
+      ballId:    selectedBall?.id   ?? null,
+      ballName:  selectedBall?.name ?? (ballName.trim() || 'Ball 1'),
+      ballNotes: selectedBall ? '' : ballNotes.trim(),
+      surface:   surface || (selectedBall?.surface ?? null),
+    });
+  };
 
   const handleImport = (e) => {
     const file = e.target.files?.[0];
@@ -132,10 +161,40 @@ export default function SetupScreen({ onStart, onImport }) {
         {/* Ball */}
         <section className="lu-setup-section">
           <h2 className="lu-setup-h">Active ball</h2>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-            <TextField label="Name"  value={ballName}  onChange={setBallName}  placeholder="e.g. Phaze II" />
-            <TextField label="Notes" value={ballNotes} onChange={setBallNotes} placeholder="Surface, layout…" />
-          </div>
+
+          {ballCatalog.length > 0 && (
+            <div style={{ display:'flex', gap:6, marginBottom:10 }}>
+              {['existing', 'new'].map(m => (
+                <button key={m} type="button" onClick={() => setBallMode(m)} style={{
+                  flex:1, padding:'7px 10px', borderRadius:8, cursor:'pointer',
+                  fontFamily:'inherit', fontSize:12.5, fontWeight:600,
+                  background: ballMode === m ? 'rgba(238,122,46,0.08)' : 'var(--lu-bg-2)',
+                  border: `1px solid ${ballMode === m ? 'rgba(238,122,46,0.65)' : 'var(--lu-line)'}`,
+                  color: ballMode === m ? 'var(--lu-target)' : 'var(--lu-txt-2)',
+                  transition:'border-color 0.15s, background 0.15s',
+                }}>
+                  {m === 'existing' ? 'From bag' : 'New ball'}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {ballMode === 'existing' && ballCatalog.length > 0 ? (
+            <BallSelect
+              catalog={ballCatalog}
+              selected={ballId}
+              onSelect={setBallId}
+              surface={surface}
+              onSurface={setSurface}
+            />
+          ) : (
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+              <TextField label="Name"  value={ballName}  onChange={setBallName}  placeholder="e.g. Phaze II" />
+              <TextField label="Notes" value={ballNotes} onChange={setBallNotes} placeholder="Layout, notes…" />
+              <SelectField label="Surface" value={surface} onChange={setSurface}
+                           options={SURFACE_OPTIONS} placeholder="Select…" />
+            </div>
+          )}
         </section>
 
         <button className="lu-btn-primary" onClick={submit} style={{ marginTop:6 }}>
@@ -152,6 +211,34 @@ export default function SetupScreen({ onStart, onImport }) {
         </p>
 
       </div>
+    </div>
+  );
+}
+
+function BallSelect({ catalog, selected, onSelect, surface, onSurface }) {
+  const ball = catalog.find(b => b.id === selected) ?? catalog[0];
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+      <label className="lu-field">
+        <span className="lu-field-label">Ball</span>
+        <span className="lu-field-input">
+          <select value={selected ?? ''} onChange={e => onSelect(e.target.value)}
+                  style={{ width:'100%', background:'var(--lu-bg-1)', border:'1px solid var(--lu-line)',
+                           color:'var(--lu-txt)', borderRadius:7, padding:'7px 9px', fontSize:13,
+                           outline:'none', fontFamily:'inherit', appearance:'none' }}>
+            {catalog.map(b => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+        </span>
+      </label>
+      <SelectField label="Surface (today)" value={surface || (ball?.surface ?? '')}
+                   onChange={onSurface} options={SURFACE_OPTIONS} placeholder="Same as last time" />
+      {ball?.notes && (
+        <p style={{ margin:0, fontSize:11.5, color:'var(--lu-txt-3)', fontStyle:'italic' }}>
+          {ball.notes}
+        </p>
+      )}
     </div>
   );
 }
@@ -179,6 +266,23 @@ function TextField({ label, value, onChange, placeholder, hint }) {
                onChange={e => onChange(e.target.value)} />
       </span>
       {hint && <span className="lu-field-hint">{hint}</span>}
+    </label>
+  );
+}
+
+function SelectField({ label, value, onChange, options, placeholder }) {
+  return (
+    <label className="lu-field">
+      <span className="lu-field-label">{label}</span>
+      <span className="lu-field-input">
+        <select value={value} onChange={e => onChange(e.target.value)}
+                style={{ width:'100%', background:'var(--lu-bg-1)', border:'1px solid var(--lu-line)',
+                         color:'var(--lu-txt)', borderRadius:7, padding:'7px 9px', fontSize:13,
+                         outline:'none', fontFamily:'inherit', appearance:'none' }}>
+          {placeholder && <option value="">{placeholder}</option>}
+          {options.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      </span>
     </label>
   );
 }

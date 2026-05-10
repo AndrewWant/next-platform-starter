@@ -90,7 +90,7 @@ export default function LineupApp() {
     Promise.all([
       upsertUserProfile({ hand, ball_to_slide_foot: cfg.ballOffset, drift: cfg.drift }),
       createDbSession({
-        pattern_name:     cfg.patternLabel || null,
+        pattern_label:    cfg.patternLabel || null,
         pattern_length:   cfg.patternLength,
         hand,
         ball_to_slide_foot: cfg.ballOffset,
@@ -104,10 +104,10 @@ export default function LineupApp() {
         : ballCatalog.find(b => b.name.toLowerCase() === (cfg.ballName || '').toLowerCase());
       const ballPromise = existingBall
         ? Promise.resolve(existingBall)
-        : createBall({ name: cfg.ballName || 'Ball 1', notes: cfg.ballNotes || null, surface: cfg.surface || null });
+        : createBall({ name: cfg.ballName || 'Ball 1', surface: cfg.surface || null });
       return ballPromise.then(ball => {
         if (!existingBall) setBallCatalog(prev => [...prev, ball]);
-        return addBallToSession({ session_id: sessId, ball_id: ball.id, surface: cfg.surface || null, notes: cfg.ballNotes || null });
+        return addBallToSession({ session_id: sessId, ball_id: ball.id, surface: cfg.surface || null });
       });
     }).then(lbId => {
       setDbLineupBallId(lbId);
@@ -227,17 +227,16 @@ export default function LineupApp() {
         dbShotCountRef.current += 1;
         const shotNum = dbShotCountRef.current;
         saveDbShot({
-          session_id:         dbSessionId,
-          lineup_ball_id:     dbLineupBallId,
-          shot_number:        shotNum,
-          planned_foot:       planned.foot,
-          planned_target:     planned.target,
-          planned_breakpoint: planned.brk,
-          actual_foot:        actual.foot,
-          actual_target:      actual.target,
-          actual_breakpoint:  actual.brk,
-          actual_finish:      actual.finish,
-          notes:              null,
+          session_id:   dbSessionId,
+          ball_id:      dbLineupBallId,
+          shot_number:  shotNum,
+          planned_foot:   planned.foot,
+          planned_target: planned.target,
+          planned_brk:    planned.brk,
+          actual_foot:    actual.foot,
+          actual_target:  actual.target,
+          actual_brk:     actual.brk,
+          actual_finish:  actual.finish,
         }).catch(() => {});
       }
     }

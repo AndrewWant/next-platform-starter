@@ -11,6 +11,10 @@ async function authedClient() {
   return { supabase, userId: user.id };
 }
 
+// DB stores handedness as 'right'/'left'; UI uses 'R'/'L'
+const toDbHand  = h => h === 'L' ? 'left' : 'right';
+const fromDbHand = h => h === 'left' ? 'L' : 'R';
+
 // ─── User Profile ─────────────────────────────────────────────────────────────
 
 export async function getUserProfile() {
@@ -21,7 +25,7 @@ export async function getUserProfile() {
     .eq('user_id', userId)
     .maybeSingle();
   if (error) throw error;
-  return data;
+  return data; // hand column is 'R'/'L' (hand_type enum)
 }
 
 export async function upsertUserProfile({ hand, ball_to_slide_foot, drift }) {
@@ -51,11 +55,11 @@ export async function getBalls() {
   return data ?? [];
 }
 
-export async function createBall({ name, manufacturer, serial_number, cover_stock, surface, notes }) {
+export async function createBall({ name, manufacturer, serial_number, cover_stock_type, surface }) {
   const { supabase, userId } = await authedClient();
   const { data, error } = await supabase
     .from('balls')
-    .insert({ user_id: userId, name, manufacturer, serial_number, cover_stock, surface, notes })
+    .insert({ user_id: userId, name, manufacturer, serial_number, cover_stock_type, surface })
     .select()
     .single();
   if (error) throw error;
@@ -78,9 +82,9 @@ export async function updateBallSurface(ballId, surface) {
 // ─── Sessions ─────────────────────────────────────────────────────────────────
 
 export async function createSession({
-  pattern_name,
+  pattern_label,
   pattern_length,
-  hand,
+  hand,             // 'R' | 'L'
   ball_to_slide_foot,
   drift,
 }) {
@@ -89,9 +93,9 @@ export async function createSession({
     .from('lineup_sessions')
     .insert({
       user_id: userId,
-      pattern_name,
+      pattern_label,
       pattern_length,
-      hand,
+      handedness: toDbHand(hand),   // DB column: handedness; enum: 'right'/'left'
       ball_to_slide_foot,
       drift,
     })
@@ -103,7 +107,7 @@ export async function createSession({
 
 // ─── Session Balls ────────────────────────────────────────────────────────────
 
-export async function addBallToSession({ session_id, ball_id, surface, notes }) {
+export async function addBallToSession({ session_id, ball_id, surface }) {
   const { supabase, userId } = await authedClient();
 
   // Surface write-back: if surface differs from catalog, update balls table
@@ -125,7 +129,7 @@ export async function addBallToSession({ session_id, ball_id, surface, notes }) 
 
   const { data, error } = await supabase
     .from('lineup_balls')
-    .insert({ session_id, ball_id, surface, notes })
+    .insert({ session_id, ball_id, surface, user_id: userId })
     .select('id')
     .single();
   if (error) throw error;
@@ -136,32 +140,31 @@ export async function addBallToSession({ session_id, ball_id, surface, notes }) 
 
 export async function saveShot({
   session_id,
-  lineup_ball_id,
+  ball_id,          // FK to lineup_balls.id
   shot_number,
   planned_foot,
   planned_target,
-  planned_breakpoint,
+  planned_brk,      // DB column name
   actual_foot,
   actual_target,
-  actual_breakpoint,
+  actual_brk,       // DB column name
   actual_finish,
-  notes,
 }) {
-  const { supabase } = await authedClient();
+  const { supabase, userId } = await authedClient();
   const { data, error } = await supabase
     .from('lineup_shots')
     .insert({
       session_id,
-      lineup_ball_id,
+      ball_id,
       shot_number,
       planned_foot,
       planned_target,
-      planned_breakpoint,
+      planned_brk,
       actual_foot,
       actual_target,
-      actual_breakpoint,
+      actual_brk,
       actual_finish,
-      notes,
+      user_id: userId,
     })
     .select('id')
     .single();
@@ -187,7 +190,7 @@ export async function getSessions() {
   const { data: sessions, error } = await supabase
     .from('lineup_sessions')
     .select(`
-      id, created_at, pattern_name, pattern_length, hand, ball_to_slide_foot, drift,
+      id, created_at, pattern_label, pattern_length, handedness, ball_to_slide_foot, drift,
       lineup_balls ( balls ( name ) )
     `)
     .eq('user_id', userId)
@@ -210,9 +213,9 @@ export async function getSessions() {
   return sessions.map(s => ({
     id:               s.id,
     created_at:       s.created_at,
-    pattern_name:     s.pattern_name,
+    pattern_label:    s.pattern_label,
     pattern_length:   s.pattern_length,
-    hand:             s.hand,
+    hand:             fromDbHand(s.handedness),   // normalise to 'R'/'L' for UI
     ball_to_slide_foot: s.ball_to_slide_foot,
     drift:            s.drift,
     shot_count:       countMap[s.id] ?? 0,
@@ -228,5 +231,9 @@ export async function getSessionDetail(sessionId) {
   ]);
   if (sErr) throw sErr;
   if (shErr) throw shErr;
-  return { session, shots: shots ?? [] };
+  // Normalise handedness to 'R'/'L' for UI consistency
+  return {
+    session: { ...session, hand: fromDbHand(session.handedness) },
+    shots:   shots ?? [],
+  };
 }

@@ -60,8 +60,8 @@ function ListView({ sessions, onOpen }) {
         }}>
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontWeight:700, fontSize:13, color:'var(--lu-txt)', lineHeight:1.2 }}>
-              {s.pattern_name
-                ? `${s.pattern_name} (${s.pattern_length} ft)`
+              {s.pattern_label
+                ? `${s.pattern_label} (${s.pattern_length} ft)`
                 : `${s.pattern_length} ft · ${s.hand}H`}
             </div>
             {s.ball_names && (
@@ -83,7 +83,7 @@ function ListView({ sessions, onOpen }) {
               }}>
                 {s.shot_count} shot{s.shot_count !== 1 ? 's' : ''}
               </span>
-              {s.pattern_name && (
+              {s.pattern_label && (
                 <span style={{ color:'var(--lu-txt-3)' }}>{s.hand}H</span>
               )}
             </div>
@@ -117,22 +117,22 @@ function DetailView({ detail, onBack }) {
 
   // Map DB shots to the shape Lane (reviewShots) and ShotHistory expect
   const reviewShots = shots.map(s => ({
-    actual_foot:        s.actual_foot,
-    actual_target:      s.actual_target,
-    actual_breakpoint:  s.actual_breakpoint,
-    actual_finish:      s.actual_finish,
+    actual_foot:       s.actual_foot,
+    actual_target:     s.actual_target,
+    actual_breakpoint: s.actual_brk,
+    actual_finish:     s.actual_finish,
   }));
 
   const mappedShots = shots.map((s, i) => ({
     index:      i,
     shotNumber: s.shot_number,
     planned:    s.planned_foot != null
-      ? { foot: s.planned_foot, target: s.planned_target, brk: s.planned_breakpoint, finish: POCKET }
+      ? { foot: s.planned_foot, target: s.planned_target, brk: s.planned_brk, finish: POCKET }
       : null,
     actual: {
       foot:   s.actual_foot,
       target: s.actual_target,
-      brk:    s.actual_breakpoint,
+      brk:    s.actual_brk,
       finish: s.actual_finish,
       boardsCrossed: null,
     },
@@ -147,9 +147,9 @@ function DetailView({ detail, onBack }) {
     : '—';
 
   const reviewSession = {
-    hand:         session.hand,
+    hand:          session.hand,          // already normalised to 'R'/'L' by getSessionDetail
     patternLength: session.pattern_length,
-    patternLabel:  session.pattern_name || '',
+    patternLabel:  session.pattern_label || '',
     ballOffset:    session.ball_to_slide_foot ?? 5,
     drift:         session.drift ?? 0,
   };
@@ -171,8 +171,8 @@ function DetailView({ detail, onBack }) {
             fontWeight:700, fontSize:13, color:'var(--lu-txt)',
             overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
           }}>
-            {session.pattern_name
-              ? `${session.pattern_name} (${session.pattern_length} ft)`
+            {session.pattern_label
+              ? `${session.pattern_label} (${session.pattern_length} ft)`
               : `${session.pattern_length} ft`}
           </div>
           <div style={{

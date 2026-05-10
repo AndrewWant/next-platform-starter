@@ -125,6 +125,22 @@ const patternY = len => FOUL_Y - LANE_H_PX * (len / 60);
 // Export helpers for use in lineup-app
 export { bowlerToPhys, physToBowler, round1, clamp, ARROW_BOARDS, FOUL_Y, PIN_ROW_Y, APPROACH_DOT_Y };
 
+// ─── MarkerPill helper ────────────────────────────────────────────────────────
+// Renders a dark-bg + colored-fill pill with white board number.
+// cx/cy = pill centre in SVG units.
+function MarkerPill({ cx, cy, label, color }) {
+  return (
+    <g pointerEvents="none">
+      <rect x={cx - 11} y={cy - 7} width={22} height={14} rx={7} fill="rgba(0,0,0,0.72)" />
+      <rect x={cx - 10} y={cy - 6} width={20} height={12} rx={6} fill={color} opacity={0.95} />
+      <text x={cx} y={cy + 4} textAnchor="middle"
+            fontFamily="'JetBrains Mono', monospace" fontSize={10} fontWeight={700} fill="#fff">
+        {label}
+      </text>
+    </g>
+  );
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function PinGlyph({ cx, cy, showNumber, label }) {
@@ -339,25 +355,23 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
       })}
       {!isReview && finish != null && (() => {
         const isActive = activeZone === 'finish';
+        const cx = bowlerX(finish, hand);
         const fx = (bowlerToPhys(finish, hand) - 1) * BOARD_W;
-        const w = isActive ? BOARD_W * 2.5 : BOARD_W;
+        const w  = isActive ? BOARD_W * 2.5 : BOARD_W;
         const xOff = isActive ? BOARD_W * 0.75 : 0;
+        // Pill always to the right of the column; flip left if too close to edge
+        const pillCx = Math.min(fx + w + xOff + 15, W_LANE - 14);
         return (
           <g>
+            {isActive && (
+              <rect x={fx - xOff - 3} y={0} width={w + 6} height={PIN_DECK_H}
+                    fill={C.finish} opacity={0.12} />
+            )}
             <rect x={fx - xOff} y={2} width={w} height={PIN_DECK_H - 4}
-                  fill={C.finish} opacity={isActive ? 0.35 : 0.55} />
+                  fill={C.finish} opacity={isActive ? 0.45 : 0.55} />
             <rect x={fx - xOff} y={2} width={w} height={PIN_DECK_H - 4}
                   fill="none" stroke={C.finish} strokeWidth={isActive ? 2.5 : 1.5} />
-            {/* board number pill */}
-            <rect x={bowlerX(finish, hand) - 11} y={PIN_DECK_H - 20} width={22} height={14} rx={7}
-                  fill="rgba(0,0,0,0.7)" />
-            <rect x={bowlerX(finish, hand) - 10} y={PIN_DECK_H - 19} width={20} height={12} rx={6}
-                  fill={C.finish} opacity={0.95} />
-            <text x={bowlerX(finish, hand)} y={PIN_DECK_H - 10}
-                  textAnchor="middle" fontFamily="'JetBrains Mono', monospace"
-                  fontSize={10} fontWeight={700} fill="#2a1e0a">
-              {finish}
-            </text>
+            <MarkerPill cx={pillCx} cy={PIN_DECK_H / 2} label={finish} color={C.finish} />
           </g>
         );
       })()}
@@ -439,60 +453,33 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
         </g>
       )}
 
-      {/* TARGET marker (plan/record only) */}
+      {/* TARGET marker — expands + pill moves right when active */}
       {!isReview && (() => {
         const cx = bowlerX(target, hand);
         const isActive = activeZone === 'target';
         const r = isActive ? 15 : 8.5;
+        // When active: pill to the right of the halo (r=22); when idle: pill below
+        const pillCx = isActive ? Math.min(cx + 22 + 4 + 11, W_LANE - 14) : cx;
+        const pillCy = isActive ? ARROW_LINE_Y : ARROW_LINE_Y + 20;
         return (
           <g>
-            {isActive && (
-              <circle cx={cx} cy={ARROW_LINE_Y} r={22}
-                      fill={C.target} opacity={0.18} />
-            )}
-            <circle cx={cx} cy={ARROW_LINE_Y}
-                    r={r} fill="none" stroke={C.target} strokeWidth={2.4} />
+            {isActive && <circle cx={cx} cy={ARROW_LINE_Y} r={22} fill={C.target} opacity={0.18} />}
+            <circle cx={cx} cy={ARROW_LINE_Y} r={r} fill="none" stroke={C.target} strokeWidth={2.4} />
             <circle cx={cx} cy={ARROW_LINE_Y} r={2.6} fill={C.target} />
-            {/* board number pill */}
-            <rect x={cx - 11} y={ARROW_LINE_Y + 13} width={22} height={14} rx={7}
-                  fill="rgba(0,0,0,0.7)" />
-            <rect x={cx - 10} y={ARROW_LINE_Y + 14} width={20} height={12} rx={6}
-                  fill={C.target} opacity={0.95} />
-            <text x={cx} y={ARROW_LINE_Y + 23}
-                  textAnchor="middle" fontFamily="'JetBrains Mono', monospace"
-                  fontSize={10} fontWeight={700} fill="#fff">
-              {target}
-            </text>
+            <MarkerPill cx={pillCx} cy={pillCy} label={target} color={C.target} />
           </g>
         );
       })()}
 
-      {/* BREAKPOINT marker (plan/record only) */}
+      {/* BREAKPOINT marker — display-only, never interactive, no expansion */}
       {!isReview && (() => {
         const cx = bowlerX(brk, hand);
-        const isActive = activeZone === 'brk';
-        const r = isActive ? 15 : 8.5;
         return (
           <g>
-            {isActive && (
-              <circle cx={cx} cy={oilTop} r={22}
-                      fill={C.brk} opacity={0.18} />
-            )}
-            <line x1={cx} y1={oilTop - 7} x2={cx} y2={oilTop + 7}
-                  stroke={C.brk} strokeWidth={2.5} />
-            <circle cx={cx} cy={oilTop}
-                    r={r} fill="none" stroke={C.brk} strokeWidth={2.4} />
+            <line x1={cx} y1={oilTop - 7} x2={cx} y2={oilTop + 7} stroke={C.brk} strokeWidth={2.5} />
+            <circle cx={cx} cy={oilTop} r={8.5} fill="none" stroke={C.brk} strokeWidth={2.4} />
             <circle cx={cx} cy={oilTop} r={2.6} fill={C.brk} />
-            {/* board number pill */}
-            <rect x={cx - 11} y={oilTop - 27} width={22} height={14} rx={7}
-                  fill="rgba(0,0,0,0.7)" />
-            <rect x={cx - 10} y={oilTop - 26} width={20} height={12} rx={6}
-                  fill={C.brk} opacity={0.95} />
-            <text x={cx} y={oilTop - 17}
-                  textAnchor="middle" fontFamily="'JetBrains Mono', monospace"
-                  fontSize={10} fontWeight={700} fill="#fff">
-              {brk}
-            </text>
+            <MarkerPill cx={cx} cy={oilTop - 20} label={brk} color={C.brk} />
           </g>
         );
       })()}
@@ -539,43 +526,50 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
         START
       </text>
 
-      {/* SLIDE FOOT marker (plan: derived/dimmed; record: active) */}
+      {/* SLIDE FOOT marker — plan: dimmed/dashed zone rect; record: filled + expands when active */}
       {!isReview && slideB != null && (() => {
-        const isPlan = mode === 'plan';
-        const x = bowlerX(slideB, hand);
+        const isPlan   = mode === 'plan';
+        const isActive = activeZone === 'foot_slide';
+        const cx = bowlerX(slideB, hand);
+        const rw = BOARD_W * (isActive ? 3 : 2.2);
+        const pillCx = Math.min(cx + rw / 2 + 4 + 11, W_LANE - 14);
         return (
           <g opacity={isPlan ? 0.55 : 1}>
-            <rect x={x - BOARD_W * 1.1} y={SLIDE_MARKER_Y - 11}
-                  width={BOARD_W * 2.2} height={22} rx={5}
+            {isActive && (
+              <rect x={cx - rw / 2 - 6} y={SLIDE_MARKER_Y - 17}
+                    width={rw + 12} height={34} rx={8}
+                    fill={C.stance} opacity={0.18} />
+            )}
+            <rect x={cx - rw / 2} y={SLIDE_MARKER_Y - 11}
+                  width={rw} height={22} rx={5}
                   fill={isPlan ? 'none' : C.stance}
-                  stroke={C.stance} strokeWidth={2}
+                  stroke={C.stance} strokeWidth={isActive ? 2.5 : 2}
                   strokeDasharray={isPlan ? '4 3' : '0'} />
-            <text x={x} y={SLIDE_MARKER_Y + 4}
-                  textAnchor="middle" fontFamily="'JetBrains Mono', monospace"
-                  fontSize={11} fontWeight={700}
-                  fill={isPlan ? C.stance : '#0e2418'}>
-              {slideB}
-            </text>
+            <MarkerPill cx={pillCx} cy={SLIDE_MARKER_Y} label={slideB} color={C.stance} />
           </g>
         );
       })()}
 
-      {/* START FOOT marker (plan: primary/dashed; record: secondary/outlined) */}
+      {/* START FOOT marker — dashed zone rect; expands + pill right when active */}
       {!isReview && stanceB != null && (() => {
-        const isPlan = mode === 'plan';
-        const x = bowlerX(stanceB, hand);
+        const isActive = activeZone === 'foot_start';
+        const cx  = bowlerX(stanceB, hand);
+        const rcy = APPROACH_DOT_Y + 23;
+        const rw  = BOARD_W * (isActive ? 3 : 2.2);
+        const pillCx = Math.min(cx + rw / 2 + 4 + 11, W_LANE - 14);
         return (
-          <g opacity={isPlan ? 0.9 : 0.85}>
-            <rect x={x - BOARD_W * 1.1} y={APPROACH_DOT_Y + 12}
-                  width={BOARD_W * 2.2} height={22} rx={5}
-                  fill={isPlan ? 'none' : 'none'}
-                  stroke={C.stance} strokeWidth={isPlan ? 2.2 : 1.8}
-                  strokeDasharray={isPlan ? '5 3' : '4 3'} />
-            <text x={x} y={APPROACH_DOT_Y + 27}
-                  textAnchor="middle" fontFamily="'JetBrains Mono', monospace"
-                  fontSize={11} fontWeight={700} fill={C.stance}>
-              {stanceB}
-            </text>
+          <g opacity={0.9}>
+            {isActive && (
+              <rect x={cx - rw / 2 - 6} y={rcy - 17}
+                    width={rw + 12} height={34} rx={8}
+                    fill={C.stance} opacity={0.18} />
+            )}
+            <rect x={cx - rw / 2} y={rcy - 11}
+                  width={rw} height={22} rx={5}
+                  fill="none" stroke={C.stance}
+                  strokeWidth={isActive ? 2.5 : 1.8}
+                  strokeDasharray={isActive ? '0' : '5 3'} />
+            <MarkerPill cx={pillCx} cy={rcy} label={stanceB} color={C.stance} />
           </g>
         );
       })()}

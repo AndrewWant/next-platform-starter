@@ -337,21 +337,30 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
           </g>
         );
       })}
-      {!isReview && finish != null && (
-        <g>
-          <rect x={(bowlerToPhys(finish, hand) - 1) * BOARD_W} y={2}
-                width={BOARD_W} height={PIN_DECK_H - 4}
-                fill={C.finish} opacity={0.55} />
-          <rect x={(bowlerToPhys(finish, hand) - 1) * BOARD_W} y={2}
-                width={BOARD_W} height={PIN_DECK_H - 4}
-                fill="none" stroke={C.finish} strokeWidth={1.5} />
-          <text x={bowlerX(finish, hand)} y={PIN_DECK_H - 4}
-                textAnchor="middle" fontFamily="'JetBrains Mono', monospace"
-                fontSize={10} fontWeight={700} fill="#2a1e0a">
-            {finish}
-          </text>
-        </g>
-      )}
+      {!isReview && finish != null && (() => {
+        const isActive = activeZone === 'finish';
+        const fx = (bowlerToPhys(finish, hand) - 1) * BOARD_W;
+        const w = isActive ? BOARD_W * 2.5 : BOARD_W;
+        const xOff = isActive ? BOARD_W * 0.75 : 0;
+        return (
+          <g>
+            <rect x={fx - xOff} y={2} width={w} height={PIN_DECK_H - 4}
+                  fill={C.finish} opacity={isActive ? 0.35 : 0.55} />
+            <rect x={fx - xOff} y={2} width={w} height={PIN_DECK_H - 4}
+                  fill="none" stroke={C.finish} strokeWidth={isActive ? 2.5 : 1.5} />
+            {/* board number pill */}
+            <rect x={bowlerX(finish, hand) - 11} y={PIN_DECK_H - 20} width={22} height={14} rx={7}
+                  fill="rgba(0,0,0,0.7)" />
+            <rect x={bowlerX(finish, hand) - 10} y={PIN_DECK_H - 19} width={20} height={12} rx={6}
+                  fill={C.finish} opacity={0.95} />
+            <text x={bowlerX(finish, hand)} y={PIN_DECK_H - 10}
+                  textAnchor="middle" fontFamily="'JetBrains Mono', monospace"
+                  fontSize={10} fontWeight={700} fill="#2a1e0a">
+              {finish}
+            </text>
+          </g>
+        );
+      })()}
       {PINS.map(p => (
         <PinGlyph key={p.n} cx={physX(p.pb)} cy={PIN_ROW_Y[p.row]}
                   label={p.n} showNumber={tweaks.showPinNumbers} />
@@ -403,37 +412,6 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
         );
       })}
 
-      {/* TARGET marker (plan/record only) */}
-      {!isReview && (
-        <g>
-          <circle cx={bowlerX(target, hand)} cy={ARROW_LINE_Y}
-                  r={8.5} fill="none" stroke={C.target} strokeWidth={2.4} />
-          <circle cx={bowlerX(target, hand)} cy={ARROW_LINE_Y} r={2.6} fill={C.target} />
-          <text x={bowlerX(target, hand)} y={ARROW_LINE_Y + 22}
-                textAnchor="middle" fontFamily="'JetBrains Mono', monospace"
-                fontSize={10} fontWeight={700} fill={C.target}>
-            {target}
-          </text>
-        </g>
-      )}
-
-      {/* BREAKPOINT marker (plan/record only) */}
-      {!isReview && (
-        <g>
-          <line x1={bowlerX(brk, hand)} y1={oilTop - 7}
-                x2={bowlerX(brk, hand)} y2={oilTop + 7}
-                stroke={C.brk} strokeWidth={2.5} />
-          <circle cx={bowlerX(brk, hand)} cy={oilTop}
-                  r={8.5} fill="none" stroke={C.brk} strokeWidth={2.4} />
-          <circle cx={bowlerX(brk, hand)} cy={oilTop} r={2.6} fill={C.brk} />
-          <text x={bowlerX(brk, hand)} y={oilTop - 14}
-                textAnchor="middle" fontFamily="'JetBrains Mono', monospace"
-                fontSize={10} fontWeight={700} fill={C.brk}>
-            {brk}
-          </text>
-        </g>
-      )}
-
       {/* Review mode: overlaid historical shot paths */}
       {isReview && reviewShots?.map((s, i) => {
         const isRecent  = i === reviewShots.length - 1;
@@ -451,15 +429,73 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
         );
       })}
 
-      {/* Active ball path (plan/record only) */}
+      {/* Active ball path (plan/record only) — rendered before markers so markers sit on top */}
       {ballPath && (
-        <g>
+        <g pointerEvents="none">
           <path d={ballPath} fill="none" stroke="rgba(0,0,0,0.65)"
                 strokeWidth={7} strokeLinecap="round" strokeLinejoin="round" />
           <path d={ballPath} fill="none" stroke="rgba(255,255,255,0.9)"
                 strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
         </g>
       )}
+
+      {/* TARGET marker (plan/record only) */}
+      {!isReview && (() => {
+        const cx = bowlerX(target, hand);
+        const isActive = activeZone === 'target';
+        const r = isActive ? 15 : 8.5;
+        return (
+          <g>
+            {isActive && (
+              <circle cx={cx} cy={ARROW_LINE_Y} r={22}
+                      fill={C.target} opacity={0.18} />
+            )}
+            <circle cx={cx} cy={ARROW_LINE_Y}
+                    r={r} fill="none" stroke={C.target} strokeWidth={2.4} />
+            <circle cx={cx} cy={ARROW_LINE_Y} r={2.6} fill={C.target} />
+            {/* board number pill */}
+            <rect x={cx - 11} y={ARROW_LINE_Y + 13} width={22} height={14} rx={7}
+                  fill="rgba(0,0,0,0.7)" />
+            <rect x={cx - 10} y={ARROW_LINE_Y + 14} width={20} height={12} rx={6}
+                  fill={C.target} opacity={0.95} />
+            <text x={cx} y={ARROW_LINE_Y + 23}
+                  textAnchor="middle" fontFamily="'JetBrains Mono', monospace"
+                  fontSize={10} fontWeight={700} fill="#fff">
+              {target}
+            </text>
+          </g>
+        );
+      })()}
+
+      {/* BREAKPOINT marker (plan/record only) */}
+      {!isReview && (() => {
+        const cx = bowlerX(brk, hand);
+        const isActive = activeZone === 'brk';
+        const r = isActive ? 15 : 8.5;
+        return (
+          <g>
+            {isActive && (
+              <circle cx={cx} cy={oilTop} r={22}
+                      fill={C.brk} opacity={0.18} />
+            )}
+            <line x1={cx} y1={oilTop - 7} x2={cx} y2={oilTop + 7}
+                  stroke={C.brk} strokeWidth={2.5} />
+            <circle cx={cx} cy={oilTop}
+                    r={r} fill="none" stroke={C.brk} strokeWidth={2.4} />
+            <circle cx={cx} cy={oilTop} r={2.6} fill={C.brk} />
+            {/* board number pill */}
+            <rect x={cx - 11} y={oilTop - 27} width={22} height={14} rx={7}
+                  fill="rgba(0,0,0,0.7)" />
+            <rect x={cx - 10} y={oilTop - 26} width={20} height={12} rx={6}
+                  fill={C.brk} opacity={0.95} />
+            <text x={cx} y={oilTop - 17}
+                  textAnchor="middle" fontFamily="'JetBrains Mono', monospace"
+                  fontSize={10} fontWeight={700} fill="#fff">
+              {brk}
+            </text>
+          </g>
+        );
+      })()}
 
       {/* FOUL LINE */}
       <rect x="0" y={FOUL_Y - 3} width={W_LANE} height={3} fill="url(#lu-foulGlow)" opacity={0.7} />

@@ -50,6 +50,13 @@ const ARROW_LINE_Y   = (ARROW_TOP_Y + ARROW_BOTTOM_Y) / 2;
 const LANE_DOT_Y     = FOUL_Y - LANE_H_PX * (8 / 60);
 const APPROACH_DOT_Y = APPROACH_Y0 + APPROACH_H * 0.42;
 
+// Approach is split into two drag zones:
+//   upper strip [APPROACH_Y0 .. APPROACH_MID_Y) → slide/finish foot (record only)
+//   lower strip [APPROACH_MID_Y .. H_LANE)      → start foot (plan + record)
+// The midpoint sits just above the approach dots so dots stay in the start strip.
+const APPROACH_MID_Y  = APPROACH_Y0 + APPROACH_H * 0.38;
+const SLIDE_MARKER_Y  = APPROACH_Y0 + APPROACH_H * 0.19;  // pill centre in upper strip
+
 const PINS = [
   { n: 1,  pb: 20,    row: 0 },
   { n: 2,  pb: 14.35, row: 1 }, { n: 3,  pb: 25.65, row: 1 },
@@ -84,10 +91,11 @@ const C = {
 };
 
 const ZONE_COLOR = {
-  target: C.target,
-  brk:    C.brk,
-  foot:   C.stance,
-  finish: C.finish,
+  target:     C.target,
+  brk:        C.brk,
+  foot_start: C.stance,
+  foot_slide: C.stance,
+  finish:     C.finish,
 };
 
 // ─── Coordinate helpers ───────────────────────────────────────────────────────
@@ -170,7 +178,8 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
   // Active values by mode (only when not in review mode)
   const target  = isReview ? null : (mode === 'plan' ? plan.target : result.target);
   const brk     = isReview ? null : (mode === 'plan' ? plan.brk    : result.brk);
-  const stanceB = isReview ? null : (mode === 'plan' ? plan.foot : result.foot);
+  const stanceB = isReview ? null : (mode === 'plan' ? plan.foot   : result.foot);   // start foot
+  const slideB  = isReview ? null : (mode === 'plan' ? plan.derived.slideFoot : result.slide); // slide foot
   const finish  = isReview ? null : result.finish;
 
   // Ball release at foul line (for the Bézier path start)
@@ -193,20 +202,22 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
   }, []);
 
   const zoneFromY = useCallback((svgY) => {
-    if (svgY < PIN_DECK_H)   return mode === 'record' ? 'finish' : null;
-    if (svgY < ARROW_LINE_Y) return null;    // brk zone: display only, never interactive
-    if (svgY < FOUL_Y)       return 'target';
-    if (svgY >= APPROACH_Y0) return 'foot';
+    if (svgY < PIN_DECK_H)      return mode === 'record' ? 'finish' : null;
+    if (svgY < ARROW_LINE_Y)    return null;           // brk zone: display only
+    if (svgY < FOUL_Y)          return 'target';
+    if (svgY < APPROACH_MID_Y)  return mode === 'record' ? 'foot_slide' : null;  // upper strip
+    if (svgY >= APPROACH_MID_Y) return 'foot_start';   // lower strip: always draggable
     return null;
   }, [mode]);
 
   const fireZone = useCallback((zone, svgX) => {
     if (!zone || svgX == null) return;
     const b = xToBowler(svgX, hand);
-    if (zone === 'target') on.target(b);
-    else if (zone === 'brk')    on.brk(b);
-    else if (zone === 'foot')   on.foot(b);
-    else if (zone === 'finish') on.finish(b);
+    if (zone === 'target')          on.target(b);
+    else if (zone === 'brk')        on.brk(b);
+    else if (zone === 'foot_start') on.foot_start(b);
+    else if (zone === 'foot_slide') on.foot_slide?.(b);
+    else if (zone === 'finish')     on.finish(b);
   }, [hand, on]);
 
   const handlePointerDown = useCallback((e) => {
@@ -232,17 +243,19 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
 
   // ── Crosshair zone Y extents ──────────────────────────────────────────────
   const ZONE_Y = {
-    finish: { y1: 2,           y2: PIN_DECK_H - 2 },
-    brk:    { y1: PIN_DECK_H,  y2: ARROW_LINE_Y   },
-    target: { y1: ARROW_LINE_Y, y2: FOUL_Y         },
-    foot:   { y1: APPROACH_Y0,  y2: H_LANE - 4     },
+    finish:     { y1: 2,              y2: PIN_DECK_H - 2  },
+    brk:        { y1: PIN_DECK_H,     y2: ARROW_LINE_Y    },
+    target:     { y1: ARROW_LINE_Y,   y2: FOUL_Y          },
+    foot_slide: { y1: APPROACH_Y0,    y2: APPROACH_MID_Y  },
+    foot_start: { y1: APPROACH_MID_Y, y2: H_LANE - 4      },
   };
 
   // Crosshair X position: use the current value for the active zone
-  const crosshairBoard = activeZone === 'target' ? target
-    : activeZone === 'brk'    ? brk
-    : activeZone === 'foot'   ? stanceB
-    : activeZone === 'finish' ? (finish ?? 20)
+  const crosshairBoard = activeZone === 'target'     ? target
+    : activeZone === 'brk'        ? brk
+    : activeZone === 'foot_start' ? stanceB
+    : activeZone === 'foot_slide' ? slideB
+    : activeZone === 'finish'     ? (finish ?? 20)
     : null;
   const crosshairX = crosshairBoard != null ? bowlerX(crosshairBoard, hand) : null;
 
@@ -265,7 +278,9 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
   const ballPath = (() => {
     if (isReview || !tweaks.showPath) return null;
     const finishBoard = mode === 'record' && finish != null ? finish : 17;
-    const releaseBd = (mode === 'plan') ? ballRelease : (result.foot + (session.drift ?? 0) - session.ballOffset);
+    // In plan mode: ballRelease = planDerived.slideFoot - ballOffset (already computed)
+    // In record mode: use actual slide foot directly
+    const releaseBd = (mode === 'plan') ? ballRelease : (result.slide - session.ballOffset);
     return makeShotPath(releaseBd, target, brk, finishBoard);
   })();
 
@@ -425,7 +440,8 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
         const atPocket  = Math.abs(s.actual_finish - 17) <= 1;
         const color     = atPocket ? C.stance : C.target;
         const opacity   = isRecent ? 0.7 : 0.3;
-        const releaseBd = s.actual_foot + (session.drift ?? 0) - (session.ballOffset ?? 5);
+        // actual_foot in reviewShots is always the slide foot (set in SessionReview)
+        const releaseBd = s.actual_foot - (session.ballOffset ?? 5);
         const d = makeShotPath(releaseBd, s.actual_target, s.actual_breakpoint, s.actual_finish);
         return (
           <g key={`rp-${i}`} pointerEvents="none">
@@ -475,21 +491,53 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
         <circle key={`ad-${pb}`} cx={physX(pb)} cy={APPROACH_DOT_Y} r={2.2} fill={C.dot} opacity={0.9} />
       ))}
 
-      {/* STANCE marker (plan/record only) */}
-      {!isReview && (() => {
+      {/* Approach strip divider + zone labels */}
+      <line x1={0} y1={APPROACH_MID_Y} x2={W_LANE} y2={APPROACH_MID_Y}
+            stroke="rgba(0,0,0,0.25)" strokeWidth={1} />
+      <text x={5} y={APPROACH_Y0 + 11} fontFamily="'JetBrains Mono', monospace"
+            fontSize={8} fontWeight={600} fill="rgba(58,37,22,0.45)" letterSpacing="0.1em">
+        SLIDE
+      </text>
+      <text x={5} y={APPROACH_MID_Y + 11} fontFamily="'JetBrains Mono', monospace"
+            fontSize={8} fontWeight={600} fill="rgba(58,37,22,0.45)" letterSpacing="0.1em">
+        START
+      </text>
+
+      {/* SLIDE FOOT marker (plan: derived/dimmed; record: active) */}
+      {!isReview && slideB != null && (() => {
         const isPlan = mode === 'plan';
-        const x = bowlerX(stanceB, hand);
+        const x = bowlerX(slideB, hand);
         return (
-          <g opacity={isPlan ? 0.85 : 1}>
-            <rect x={x - BOARD_W * 1.1} y={APPROACH_DOT_Y + 12}
+          <g opacity={isPlan ? 0.55 : 1}>
+            <rect x={x - BOARD_W * 1.1} y={SLIDE_MARKER_Y - 11}
                   width={BOARD_W * 2.2} height={22} rx={5}
                   fill={isPlan ? 'none' : C.stance}
-                  stroke={C.stance} strokeWidth={isPlan ? 2.2 : 0}
-                  strokeDasharray={isPlan ? '5 3' : '0'} />
-            <text x={x} y={APPROACH_DOT_Y + 27}
+                  stroke={C.stance} strokeWidth={2}
+                  strokeDasharray={isPlan ? '4 3' : '0'} />
+            <text x={x} y={SLIDE_MARKER_Y + 4}
                   textAnchor="middle" fontFamily="'JetBrains Mono', monospace"
                   fontSize={11} fontWeight={700}
                   fill={isPlan ? C.stance : '#0e2418'}>
+              {slideB}
+            </text>
+          </g>
+        );
+      })()}
+
+      {/* START FOOT marker (plan: primary/dashed; record: secondary/outlined) */}
+      {!isReview && stanceB != null && (() => {
+        const isPlan = mode === 'plan';
+        const x = bowlerX(stanceB, hand);
+        return (
+          <g opacity={isPlan ? 0.9 : 0.85}>
+            <rect x={x - BOARD_W * 1.1} y={APPROACH_DOT_Y + 12}
+                  width={BOARD_W * 2.2} height={22} rx={5}
+                  fill={isPlan ? 'none' : 'none'}
+                  stroke={C.stance} strokeWidth={isPlan ? 2.2 : 1.8}
+                  strokeDasharray={isPlan ? '5 3' : '4 3'} />
+            <text x={x} y={APPROACH_DOT_Y + 27}
+                  textAnchor="middle" fontFamily="'JetBrains Mono', monospace"
+                  fontSize={11} fontWeight={700} fill={C.stance}>
               {stanceB}
             </text>
           </g>

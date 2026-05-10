@@ -64,8 +64,9 @@ export default function LineupApp() {
   const [planFoot,   setPlanFoot]   = useState(15);
   const [planTarget, setPlanTarget] = useState(10);
 
-  // Record: foot, target, finish independently set. Brk always derived.
-  const [recFoot,   setRecFoot]   = useState(null);
+  // Record: start foot, slide foot, target, finish independently set. Brk always derived.
+  const [recFoot,   setRecFoot]   = useState(null);  // start/setup foot
+  const [recSlide,  setRecSlide]  = useState(null);  // slide/finish foot at foul line
   const [recTarget, setRecTarget] = useState(null);
   const [recFinish, setRecFinish] = useState(POCKET);
 
@@ -174,10 +175,11 @@ export default function LineupApp() {
   // Record mode: foot, target, and finish are draggable; brk is display-only.
 
   const laneOn = useMemo(() => ({
-    foot:   (b) => { if (mode === 'plan') setPlanFoot(b);   else setRecFoot(b);   },
-    target: (b) => { if (mode === 'plan') setPlanTarget(b); else setRecTarget(b); },
-    brk:    ()  => { /* display only — never interactive */ },
-    finish: (b) => setRecFinish(b),
+    foot_start: (b) => { if (mode === 'plan') setPlanFoot(b);  else setRecFoot(b);  },
+    foot_slide: (b) => { if (mode === 'record') setRecSlide(b); },
+    target:     (b) => { if (mode === 'plan') setPlanTarget(b); else setRecTarget(b); },
+    brk:        ()  => { /* display only — never interactive */ },
+    finish:     (b) => setRecFinish(b),
   }), [mode]);
 
   // ── Mode switching ─────────────────────────────────────────────────────────
@@ -185,14 +187,16 @@ export default function LineupApp() {
   const enterRecord = useCallback(() => {
     if (editIndex == null) {
       setRecFoot(planFoot);
+      setRecSlide(planFoot + (sessionCfg?.drift ?? 0));
       setRecTarget(planTarget);
       setRecFinish(POCKET);
     }
     setMode('record');
-  }, [editIndex, planFoot, planTarget]);
+  }, [editIndex, planFoot, planTarget, sessionCfg?.drift]);
 
   const enterPlan = useCallback(() => {
     setEditIndex(null);
+    setRecSlide(null);
     setMode('plan');
   }, []);
 
@@ -201,7 +205,7 @@ export default function LineupApp() {
   const handleSave = useCallback(() => {
     const actualFoot   = recFoot   ?? planFoot;
     const actualTarget = recTarget ?? planTarget;
-    const actualSlide  = actualFoot + (sessionCfg?.drift ?? 0);
+    const actualSlide  = recSlide  ?? (actualFoot + (sessionCfg?.drift ?? 0));
     const actualBrk    = clamp(LaneRead.expectedBreakpoint(actualSlide, actualTarget), 1, 39);
 
     const planned = {
@@ -212,6 +216,7 @@ export default function LineupApp() {
     };
     const actual = {
       foot:   actualFoot,
+      slide:  actualSlide,
       target: actualTarget,
       brk:    actualBrk,
       finish: recFinish,
@@ -227,16 +232,17 @@ export default function LineupApp() {
         dbShotCountRef.current += 1;
         const shotNum = dbShotCountRef.current;
         saveDbShot({
-          session_id:   dbSessionId,
-          ball_id:      dbLineupBallId,
-          shot_number:  shotNum,
-          planned_foot:   planned.foot,
-          planned_target: planned.target,
-          planned_brk:    planned.brk,
-          actual_foot:    actual.foot,
-          actual_target:  actual.target,
-          actual_brk:     actual.brk,
-          actual_finish:  actual.finish,
+          session_id:        dbSessionId,
+          ball_id:           dbLineupBallId,
+          shot_number:       shotNum,
+          planned_foot:      planned.foot,
+          planned_target:    planned.target,
+          planned_brk:       planned.brk,
+          actual_foot_start: actual.foot,
+          actual_foot_slide: actual.slide,
+          actual_target:     actual.target,
+          actual_brk:        actual.brk,
+          actual_finish:     actual.finish,
         }).catch(() => {});
       }
     }
@@ -273,7 +279,7 @@ export default function LineupApp() {
     refresh();
   }, [
     planFoot, planTarget, planBrk,
-    recFoot, recTarget, recFinish,
+    recFoot, recSlide, recTarget, recFinish,
     editIndex, sessionCfg, refresh,
   ]);
 
@@ -284,6 +290,7 @@ export default function LineupApp() {
     const shot    = history.find(s => s.index === index);
     if (!shot) return;
     setRecFoot(shot.actual.foot);
+    setRecSlide(shot.actual.slide ?? shot.actual.foot);
     setRecTarget(shot.actual.target);
     setRecFinish(shot.actual.finish);
     setEditIndex(index);
@@ -339,11 +346,12 @@ export default function LineupApp() {
     derived: planDerived,
   };
 
-  const recSlideFoot = (recFoot ?? planFoot) + (sessionCfg?.drift ?? 0);
+  const recActualSlide = recSlide ?? ((recFoot ?? planFoot) + (sessionCfg?.drift ?? 0));
   const resultObj = {
     foot:   recFoot   ?? planFoot,
+    slide:  recActualSlide,
     target: recTarget ?? planTarget,
-    brk:    clamp(LaneRead.expectedBreakpoint(recSlideFoot, recTarget ?? planTarget), 1, 39),
+    brk:    clamp(LaneRead.expectedBreakpoint(recActualSlide, recTarget ?? planTarget), 1, 39),
     finish: recFinish,
   };
 
@@ -414,13 +422,13 @@ export default function LineupApp() {
       <div className="lu-readouts">
         {mode === 'plan' ? (
           <>
-            <Chip color="var(--lu-stance)" label="Foot"       value={planFoot} />
+            <Chip color="var(--lu-stance)" label="Foot" value={planFoot} value2={planDerived.slideFoot} />
             <Chip color="var(--lu-target)" label="Target"     value={planTarget} />
             <Chip color="var(--lu-brk)"    label="Exp BP"     value={planBrk}   derived />
           </>
         ) : (
           <>
-            <Chip color="var(--lu-stance)" label="Foot"       value={resultObj.foot} />
+            <Chip color="var(--lu-stance)" label="Foot" value={resultObj.foot} value2={resultObj.slide} />
             <Chip color="var(--lu-target)" label="Target"     value={resultObj.target} />
             <Chip color="var(--lu-brk)"    label="Exp BP"     value={resultObj.brk}   derived />
             <Chip color="var(--lu-finish)" label="Finish"     value={resultObj.finish} />
@@ -439,7 +447,7 @@ export default function LineupApp() {
           <button className="lu-btn-primary" onClick={handleSave}>
             <span>{editIndex != null ? 'Save changes' : 'Save shot'}</span>
             <span className="lu-btn-sub">
-              finish {resultObj.finish} · target {resultObj.target} · foot {resultObj.foot}
+              finish {resultObj.finish} · target {resultObj.target} · foot {resultObj.foot}→{resultObj.slide}
             </span>
           </button>
         )}
@@ -480,7 +488,7 @@ export default function LineupApp() {
 
 // ─── Chip readout ─────────────────────────────────────────────────────────────
 
-function Chip({ color, label, value, derived }) {
+function Chip({ color, label, value, value2, derived }) {
   return (
     <div className="lu-chip">
       <span className="lu-chip-bar" style={{ background: derived ? 'transparent' : color,
@@ -491,6 +499,11 @@ function Chip({ color, label, value, derived }) {
         </div>
         <div className="lu-chip-value" style={derived ? { color:'var(--lu-txt-2)' } : {}}>
           {value ?? '—'}
+          {value2 != null && value2 !== value && (
+            <span style={{ color:'var(--lu-txt-3)', fontWeight:500, fontSize:'0.82em' }}>
+              →{value2}
+            </span>
+          )}
         </div>
       </div>
     </div>

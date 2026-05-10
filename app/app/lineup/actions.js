@@ -140,14 +140,15 @@ export async function addBallToSession({ session_id, ball_id, surface }) {
 
 export async function saveShot({
   session_id,
-  ball_id,          // FK to lineup_balls.id
+  ball_id,           // FK to lineup_balls.id
   shot_number,
   planned_foot,
   planned_target,
-  planned_brk,      // DB column name
-  actual_foot,
+  planned_brk,       // DB column name
+  actual_foot_start, // start/setup foot
+  actual_foot_slide, // slide/finish foot at foul line
   actual_target,
-  actual_brk,       // DB column name
+  actual_brk,        // DB column name
   actual_finish,
 }) {
   const { supabase, userId } = await authedClient();
@@ -160,7 +161,8 @@ export async function saveShot({
       planned_foot,
       planned_target,
       planned_brk,
-      actual_foot,
+      actual_foot_start,
+      actual_foot_slide,
       actual_target,
       actual_brk,
       actual_finish,

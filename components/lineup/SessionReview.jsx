@@ -116,8 +116,9 @@ function DetailView({ detail, onBack }) {
   const { session, shots } = detail;
 
   // Map DB shots to the shape Lane (reviewShots) and ShotHistory expect
+  // actual_foot is the slide foot (drives ball path); fall back to start foot for older records
   const reviewShots = shots.map(s => ({
-    actual_foot:       s.actual_foot,
+    actual_foot:       s.actual_foot_slide ?? s.actual_foot_start,
     actual_target:     s.actual_target,
     actual_breakpoint: s.actual_brk,
     actual_finish:     s.actual_finish,
@@ -130,7 +131,8 @@ function DetailView({ detail, onBack }) {
       ? { foot: s.planned_foot, target: s.planned_target, brk: s.planned_brk, finish: POCKET }
       : null,
     actual: {
-      foot:   s.actual_foot,
+      foot:   s.actual_foot_start,
+      slide:  s.actual_foot_slide ?? s.actual_foot_start,
       target: s.actual_target,
       brk:    s.actual_brk,
       finish: s.actual_finish,

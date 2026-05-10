@@ -158,20 +158,23 @@ function LaneBoardColumn({ pb, oilTop, markerContrast }) {
 
 // ─── Main Lane component ──────────────────────────────────────────────────────
 
-export default function Lane({ session, plan, result, mode, on, tweaks }) {
+export default function Lane({ session, plan, result, mode, on, tweaks, reviewShots }) {
   const svgRef        = useRef(null);
   const [activeZone, setActiveZone] = useState(null);
   const hand    = session.hand;
   const oilTop  = patternY(session.patternLength);
 
-  // Active values by mode
-  const target  = mode === 'plan' ? plan.target : result.target;
-  const brk     = mode === 'plan' ? plan.brk    : result.brk;
-  const stanceB = mode === 'plan' ? plan.foot : result.foot;
-  const finish  = result.finish;
+  // Review mode: reviewShots provided without plan/result
+  const isReview = reviewShots != null && plan == null;
+
+  // Active values by mode (only when not in review mode)
+  const target  = isReview ? null : (mode === 'plan' ? plan.target : result.target);
+  const brk     = isReview ? null : (mode === 'plan' ? plan.brk    : result.brk);
+  const stanceB = isReview ? null : (mode === 'plan' ? plan.foot : result.foot);
+  const finish  = isReview ? null : result.finish;
 
   // Ball release at foul line (for the Bézier path start)
-  const ballRelease = plan.derived.ballRelease;
+  const ballRelease = isReview ? null : plan.derived.ballRelease;
 
   // ── Pointer-drag helpers ─────────────────────────────────────────────────
 
@@ -207,6 +210,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks }) {
   }, [hand, on]);
 
   const handlePointerDown = useCallback((e) => {
+    if (isReview) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     const svgX = svgXFromPointer(e.clientX);
     const svgY = svgYFromPointer(e.clientY);
@@ -214,7 +218,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks }) {
     if (!zone) return;
     setActiveZone(zone);
     fireZone(zone, svgX);
-  }, [svgXFromPointer, svgYFromPointer, zoneFromY, fireZone]);
+  }, [isReview, svgXFromPointer, svgYFromPointer, zoneFromY, fireZone]);
 
   const handlePointerMove = useCallback((e) => {
     if (!activeZone) return;
@@ -242,28 +246,27 @@ export default function Lane({ session, plan, result, mode, on, tweaks }) {
     : null;
   const crosshairX = crosshairBoard != null ? bowlerX(crosshairBoard, hand) : null;
 
-  // ── Ball path: piecewise through all key points ──────────────────────────
-  // Segment 1: straight lines release→target→breakpoint (oil zone, ball rolls straight)
-  // Segment 2: quadratic Bézier from breakpoint→finish (hook after oil ends)
-  // Control point for the hook extends the travel direction (target→brk) past the breakpoint
-  // so the curve departs smoothly in the ball's direction of travel before hooking.
-  const ballPath = (() => {
-    if (!tweaks.showPath) return null;
-    const finishBoard = mode === 'record' && finish != null ? finish : 17;
-    const releaseBd = (mode === 'plan') ? ballRelease : (result.foot + (session.drift ?? 0) - session.ballOffset);
-    const sx = bowlerX(releaseBd,  hand);
-    const tx = bowlerX(target,     hand);
-    const bx = bowlerX(brk,        hand);
-    const fx = bowlerX(finishBoard, hand);
-    // Travel direction from target to breakpoint; extend past brk for smooth hook departure
+  // ── Shot path Bézier helper ───────────────────────────────────────────────
+  // release → target (arrows) → breakpoint (oil end) → finish (pin deck)
+  const makeShotPath = (releaseBd, tgt, brkBd, finBd) => {
+    const sx = bowlerX(clamp(releaseBd, 1, 39), hand);
+    const tx = bowlerX(clamp(tgt,       1, 39), hand);
+    const bx = bowlerX(clamp(brkBd,     1, 39), hand);
+    const fx = bowlerX(clamp(finBd,     1, 39), hand);
     const ddx = bx - tx;
     const ddy = oilTop - ARROW_LINE_Y;
     const approachLen = Math.sqrt(ddx * ddx + ddy * ddy) || 1;
     const hookLen     = Math.sqrt((fx - bx) ** 2 + (PIN_ROW_Y[0] - oilTop) ** 2);
     const k           = (hookLen * 0.55) / approachLen;
-    const qx = bx + ddx * k;
-    const qy = oilTop + ddy * k;
-    return `M ${sx} ${FOUL_Y} L ${tx} ${ARROW_LINE_Y} L ${bx} ${oilTop} Q ${qx} ${qy} ${fx} ${PIN_ROW_Y[0]}`;
+    return `M ${sx} ${FOUL_Y} L ${tx} ${ARROW_LINE_Y} L ${bx} ${oilTop} Q ${bx + ddx * k} ${oilTop + ddy * k} ${fx} ${PIN_ROW_Y[0]}`;
+  };
+
+  // ── Active ball path (plan/record mode) ───────────────────────────────────
+  const ballPath = (() => {
+    if (isReview || !tweaks.showPath) return null;
+    const finishBoard = mode === 'record' && finish != null ? finish : 17;
+    const releaseBd = (mode === 'plan') ? ballRelease : (result.foot + (session.drift ?? 0) - session.ballOffset);
+    return makeShotPath(releaseBd, target, brk, finishBoard);
   })();
 
   return (
@@ -307,7 +310,19 @@ export default function Lane({ session, plan, result, mode, on, tweaks }) {
               width={0.4} height={PIN_DECK_H - 8}
               fill="rgba(255,255,255,0.06)" />
       ))}
-      {finish != null && (
+      {/* Review mode: finish tick marks for each historical shot */}
+      {isReview && reviewShots?.map((s, i) => {
+        const atPocket = Math.abs(s.actual_finish - 17) <= 1;
+        const color = atPocket ? C.stance : C.target;
+        const px = (bowlerToPhys(s.actual_finish, hand) - 1) * BOARD_W;
+        return (
+          <g key={`rf-${i}`}>
+            <rect x={px} y={PIN_DECK_H - 18} width={BOARD_W} height={14}
+                  fill={color} opacity={atPocket ? 0.55 : 0.3} rx={2} />
+          </g>
+        );
+      })}
+      {!isReview && finish != null && (
         <g>
           <rect x={(bowlerToPhys(finish, hand) - 1) * BOARD_W} y={2}
                 width={BOARD_W} height={PIN_DECK_H - 4}
@@ -373,34 +388,54 @@ export default function Lane({ session, plan, result, mode, on, tweaks }) {
         );
       })}
 
-      {/* TARGET marker */}
-      <g>
-        <circle cx={bowlerX(target, hand)} cy={ARROW_LINE_Y}
-                r={8.5} fill="none" stroke={C.target} strokeWidth={2.4} />
-        <circle cx={bowlerX(target, hand)} cy={ARROW_LINE_Y} r={2.6} fill={C.target} />
-        <text x={bowlerX(target, hand)} y={ARROW_LINE_Y + 22}
-              textAnchor="middle" fontFamily="'JetBrains Mono', monospace"
-              fontSize={10} fontWeight={700} fill={C.target}>
-          {target}
-        </text>
-      </g>
+      {/* TARGET marker (plan/record only) */}
+      {!isReview && (
+        <g>
+          <circle cx={bowlerX(target, hand)} cy={ARROW_LINE_Y}
+                  r={8.5} fill="none" stroke={C.target} strokeWidth={2.4} />
+          <circle cx={bowlerX(target, hand)} cy={ARROW_LINE_Y} r={2.6} fill={C.target} />
+          <text x={bowlerX(target, hand)} y={ARROW_LINE_Y + 22}
+                textAnchor="middle" fontFamily="'JetBrains Mono', monospace"
+                fontSize={10} fontWeight={700} fill={C.target}>
+            {target}
+          </text>
+        </g>
+      )}
 
-      {/* BREAKPOINT marker */}
-      <g>
-        <line x1={bowlerX(brk, hand)} y1={oilTop - 7}
-              x2={bowlerX(brk, hand)} y2={oilTop + 7}
-              stroke={C.brk} strokeWidth={2.5} />
-        <circle cx={bowlerX(brk, hand)} cy={oilTop}
-                r={8.5} fill="none" stroke={C.brk} strokeWidth={2.4} />
-        <circle cx={bowlerX(brk, hand)} cy={oilTop} r={2.6} fill={C.brk} />
-        <text x={bowlerX(brk, hand)} y={oilTop - 14}
-              textAnchor="middle" fontFamily="'JetBrains Mono', monospace"
-              fontSize={10} fontWeight={700} fill={C.brk}>
-          {brk}
-        </text>
-      </g>
+      {/* BREAKPOINT marker (plan/record only) */}
+      {!isReview && (
+        <g>
+          <line x1={bowlerX(brk, hand)} y1={oilTop - 7}
+                x2={bowlerX(brk, hand)} y2={oilTop + 7}
+                stroke={C.brk} strokeWidth={2.5} />
+          <circle cx={bowlerX(brk, hand)} cy={oilTop}
+                  r={8.5} fill="none" stroke={C.brk} strokeWidth={2.4} />
+          <circle cx={bowlerX(brk, hand)} cy={oilTop} r={2.6} fill={C.brk} />
+          <text x={bowlerX(brk, hand)} y={oilTop - 14}
+                textAnchor="middle" fontFamily="'JetBrains Mono', monospace"
+                fontSize={10} fontWeight={700} fill={C.brk}>
+            {brk}
+          </text>
+        </g>
+      )}
 
-      {/* Ball path */}
+      {/* Review mode: overlaid historical shot paths */}
+      {isReview && reviewShots?.map((s, i) => {
+        const isRecent  = i === reviewShots.length - 1;
+        const atPocket  = Math.abs(s.actual_finish - 17) <= 1;
+        const color     = atPocket ? C.stance : C.target;
+        const opacity   = isRecent ? 0.7 : 0.3;
+        const releaseBd = s.actual_foot + (session.drift ?? 0) - (session.ballOffset ?? 5);
+        const d = makeShotPath(releaseBd, s.actual_target, s.actual_breakpoint, s.actual_finish);
+        return (
+          <g key={`rp-${i}`} pointerEvents="none">
+            <path d={d} fill="none" stroke={color} strokeOpacity={opacity}
+                  strokeWidth={isRecent ? 2.5 : 1.8} strokeLinecap="round" strokeLinejoin="round" />
+          </g>
+        );
+      })}
+
+      {/* Active ball path (plan/record only) */}
       {ballPath && (
         <g>
           <path d={ballPath} fill="none" stroke="rgba(0,0,0,0.65)"
@@ -440,8 +475,8 @@ export default function Lane({ session, plan, result, mode, on, tweaks }) {
         <circle key={`ad-${pb}`} cx={physX(pb)} cy={APPROACH_DOT_Y} r={2.2} fill={C.dot} opacity={0.9} />
       ))}
 
-      {/* STANCE marker */}
-      {(() => {
+      {/* STANCE marker (plan/record only) */}
+      {!isReview && (() => {
         const isPlan = mode === 'plan';
         const x = bowlerX(stanceB, hand);
         return (

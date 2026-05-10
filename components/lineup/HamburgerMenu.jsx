@@ -97,6 +97,7 @@ export default function HamburgerMenu({
   onSwitchBall, onAddBall,
   onWipeBall, onWipeAll, onRestart,
   onExport, onImport,
+  onViewSessions,
   onClose,
 }) {
   const [adding,   setAdding]   = useState(false);
@@ -189,6 +190,9 @@ export default function HamburgerMenu({
       {/* Session */}
       <section>
         <h4 style={S.secHead}>Session</h4>
+        <button style={S.menuBtn(false)} onClick={() => { onViewSessions?.(); onClose(); }}>
+          Past sessions
+        </button>
         <button style={S.menuBtn(false)} onClick={() => { onExport(); onClose(); }}>
           Export session JSON
         </button>

@@ -25,34 +25,42 @@ export default function ShotHistory({ shots, onEdit, onRemove }) {
       {shots.map(shot => {
         const { actual, planned, shotNumber, index } = shot;
         const miss = actual.finish - POCKET;
+        const rowContent = (
+          <>
+            <span style={{
+              fontFamily:"'JetBrains Mono', monospace",
+              fontSize:11, color:'var(--lu-txt-3)', fontWeight:600,
+            }}>
+              #{shotNumber}
+            </span>
+            <span style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:4, minWidth:0 }}>
+              <ShotCell value={actual.foot}   label="foot" color="var(--lu-stance)" />
+              <ShotCell value={actual.target} label="tgt"  color="var(--lu-target)" />
+              <ShotCell value={actual.brk}    label="bp"   color="var(--lu-brk)"    />
+              <ShotCell value={actual.finish} label="fin"  color="var(--lu-finish)" />
+            </span>
+            <MissBadge miss={miss} />
+          </>
+        );
+        const rowStyle = {
+          width:'100%', background:'transparent', border:'none', color:'var(--lu-txt)',
+          display:'grid', gridTemplateColumns:'28px 1fr auto',
+          alignItems:'center', gap:6, padding:'8px 4px 6px 8px',
+          textAlign:'left', fontFamily:'inherit',
+        };
         return (
           <li key={index} style={{
             background:'var(--lu-bg-2)', border:'1px solid var(--lu-line)',
             borderRadius:10, overflow:'hidden',
           }}>
-            {/* Actual row — tap to edit */}
-            <button onClick={() => onEdit(index)} style={{
-              width:'100%', background:'transparent', border:'none', color:'var(--lu-txt)',
-              display:'grid', gridTemplateColumns:'28px 1fr auto',
-              alignItems:'center', gap:6, padding:'8px 4px 6px 8px',
-              textAlign:'left', cursor:'pointer', fontFamily:'inherit',
-            }}>
-              <span style={{
-                fontFamily:"'JetBrains Mono', monospace",
-                fontSize:11, color:'var(--lu-txt-3)', fontWeight:600,
-              }}>
-                #{shotNumber}
-              </span>
-
-              <span style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:4, minWidth:0 }}>
-                <ShotCell value={actual.foot}   label="foot" color="var(--lu-stance)" />
-                <ShotCell value={actual.target} label="tgt"  color="var(--lu-target)" />
-                <ShotCell value={actual.brk}    label="bp"   color="var(--lu-brk)"    />
-                <ShotCell value={actual.finish} label="fin"  color="var(--lu-finish)" />
-              </span>
-
-              <MissBadge miss={miss} />
-            </button>
+            {/* Actual row — interactive if onEdit provided */}
+            {onEdit ? (
+              <button onClick={() => onEdit(index)} style={{ ...rowStyle, cursor:'pointer' }}>
+                {rowContent}
+              </button>
+            ) : (
+              <div style={rowStyle}>{rowContent}</div>
+            )}
 
             {/* Planned row — dimmed, shown if planned data exists */}
             {planned && (
@@ -74,12 +82,12 @@ export default function ShotHistory({ shots, onEdit, onRemove }) {
                   <ShotCell value={planned.brk}    label="bp"   color="var(--lu-brk)"    small />
                   <ShotCell value={planned.finish} label="fin"  color="var(--lu-finish)" small />
                 </span>
-                <button onClick={() => onRemove(index)} aria-label="Remove shot" style={{
-                  background:'transparent', border:'none', color:'var(--lu-txt-3)',
-                  fontSize:18, width:30, cursor:'pointer', fontFamily:'inherit',
-                }}>
-                  ×
-                </button>
+                {onRemove ? (
+                  <button onClick={() => onRemove(index)} aria-label="Remove shot" style={{
+                    background:'transparent', border:'none', color:'var(--lu-txt-3)',
+                    fontSize:18, width:30, cursor:'pointer', fontFamily:'inherit',
+                  }}>×</button>
+                ) : <span />}
               </div>
             )}
           </li>

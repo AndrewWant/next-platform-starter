@@ -179,3 +179,54 @@ export async function getSessionShots(sessionId) {
   if (error) throw error;
   return data ?? [];
 }
+
+// ─── Session history (review) ─────────────────────────────────────────────────
+
+export async function getSessions() {
+  const { supabase, userId } = await authedClient();
+  const { data: sessions, error } = await supabase
+    .from('lineup_sessions')
+    .select(`
+      id, created_at, pattern_name, pattern_length, hand, ball_to_slide_foot, drift,
+      lineup_balls ( balls ( name ) )
+    `)
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  if (!sessions?.length) return [];
+
+  // Fetch shot counts per session in one query
+  const sessionIds = sessions.map(s => s.id);
+  const { data: shotRows } = await supabase
+    .from('lineup_shots')
+    .select('session_id')
+    .in('session_id', sessionIds);
+
+  const countMap = {};
+  for (const row of (shotRows ?? [])) {
+    countMap[row.session_id] = (countMap[row.session_id] ?? 0) + 1;
+  }
+
+  return sessions.map(s => ({
+    id:               s.id,
+    created_at:       s.created_at,
+    pattern_name:     s.pattern_name,
+    pattern_length:   s.pattern_length,
+    hand:             s.hand,
+    ball_to_slide_foot: s.ball_to_slide_foot,
+    drift:            s.drift,
+    shot_count:       countMap[s.id] ?? 0,
+    ball_names:       (s.lineup_balls ?? []).map(lb => lb.balls?.name).filter(Boolean).join(', '),
+  }));
+}
+
+export async function getSessionDetail(sessionId) {
+  const { supabase, userId } = await authedClient();
+  const [{ data: session, error: sErr }, { data: shots, error: shErr }] = await Promise.all([
+    supabase.from('lineup_sessions').select('*').eq('id', sessionId).eq('user_id', userId).single(),
+    supabase.from('lineup_shots').select('*').eq('session_id', sessionId).order('shot_number'),
+  ]);
+  if (sErr) throw sErr;
+  if (shErr) throw shErr;
+  return { session, shots: shots ?? [] };
+}

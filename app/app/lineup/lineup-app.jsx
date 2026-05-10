@@ -13,7 +13,8 @@ import Lane        from '../../../components/lineup/Lane';
 import Drawer      from '../../../components/lineup/Drawer';
 import SetupScreen from '../../../components/lineup/SetupScreen';
 import ShotHistory from '../../../components/lineup/ShotHistory';
-import HamburgerMenu from '../../../components/lineup/HamburgerMenu';
+import HamburgerMenu   from '../../../components/lineup/HamburgerMenu';
+import SessionReview   from '../../../components/lineup/SessionReview';
 import {
   getUserProfile, upsertUserProfile,
   getBalls as getBallsCatalog, createBall,
@@ -451,6 +452,11 @@ export default function LineupApp() {
           <ShotHistory shots={history} onEdit={handleEdit} onRemove={handleRemove} />
         </Drawer>
       )}
+      {drawer === 'sessions' && (
+        <Drawer title="Past sessions" onClose={() => setDrawer(null)} side="right">
+          <SessionReview />
+        </Drawer>
+      )}
       {drawer === 'menu' && (
         <Drawer title="Menu" onClose={() => setDrawer(null)} side="left">
           <HamburgerMenu
@@ -464,6 +470,7 @@ export default function LineupApp() {
             onRestart={handleRestart}
             onExport={handleExport}
             onImport={handleImport}
+            onViewSessions={() => setDrawer('sessions')}
             onClose={() => setDrawer(null)}
           />
         </Drawer>

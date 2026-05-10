@@ -355,12 +355,14 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
       })}
       {!isReview && finish != null && (() => {
         const isActive = activeZone === 'finish';
-        const cx = bowlerX(finish, hand);
-        const fx = (bowlerToPhys(finish, hand) - 1) * BOARD_W;
-        const w  = isActive ? BOARD_W * 2.5 : BOARD_W;
+        const cx  = bowlerX(finish, hand);
+        const fx  = (bowlerToPhys(finish, hand) - 1) * BOARD_W;
+        const w   = isActive ? BOARD_W * 2.5 : BOARD_W;
         const xOff = isActive ? BOARD_W * 0.75 : 0;
-        // Pill always to the right of the column; flip left if too close to edge
-        const pillCx = Math.min(fx + w + xOff + 15, W_LANE - 14);
+        // Idle: pill just below the pin deck; active: 9 o'clock (R) / 3 o'clock (L)
+        const side   = hand === 'R' ? -1 : 1;
+        const pillCx = isActive ? clamp(cx + side * (w / 2 + 15), 14, W_LANE - 14) : cx;
+        const pillCy = isActive ? PIN_DECK_H / 2 : PIN_DECK_H + 12;
         return (
           <g>
             {isActive && (
@@ -371,7 +373,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
                   fill={C.finish} opacity={isActive ? 0.45 : 0.55} />
             <rect x={fx - xOff} y={2} width={w} height={PIN_DECK_H - 4}
                   fill="none" stroke={C.finish} strokeWidth={isActive ? 2.5 : 1.5} />
-            <MarkerPill cx={pillCx} cy={PIN_DECK_H / 2} label={finish} color={C.finish} />
+            <MarkerPill cx={pillCx} cy={pillCy} label={finish} color={C.finish} />
           </g>
         );
       })()}
@@ -453,14 +455,14 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
         </g>
       )}
 
-      {/* TARGET marker — expands + pill moves right when active */}
+      {/* TARGET marker — expands; pill 6 o'clock idle, 9/3 o'clock active */}
       {!isReview && (() => {
         const cx = bowlerX(target, hand);
         const isActive = activeZone === 'target';
-        const r = isActive ? 15 : 8.5;
-        // When active: pill floats ABOVE the fingertip; when idle: pill below
-        const pillCx = cx;
-        const pillCy = isActive ? ARROW_LINE_Y - 22 - 10 : ARROW_LINE_Y + 20;
+        const r    = isActive ? 15 : 8.5;
+        const side = hand === 'R' ? -1 : 1;
+        const pillCx = isActive ? clamp(cx + side * (22 + 15), 14, W_LANE - 14) : cx;
+        const pillCy = isActive ? ARROW_LINE_Y : ARROW_LINE_Y + 20;
         return (
           <g>
             {isActive && <circle cx={cx} cy={ARROW_LINE_Y} r={22} fill={C.target} opacity={0.18} />}
@@ -471,7 +473,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
         );
       })()}
 
-      {/* BREAKPOINT marker — display-only, never interactive, no expansion */}
+      {/* BREAKPOINT marker — display-only, always 6 o'clock */}
       {!isReview && (() => {
         const cx = bowlerX(brk, hand);
         return (
@@ -479,7 +481,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
             <line x1={cx} y1={oilTop - 7} x2={cx} y2={oilTop + 7} stroke={C.brk} strokeWidth={2.5} />
             <circle cx={cx} cy={oilTop} r={8.5} fill="none" stroke={C.brk} strokeWidth={2.4} />
             <circle cx={cx} cy={oilTop} r={2.6} fill={C.brk} />
-            <MarkerPill cx={cx} cy={oilTop - 20} label={brk} color={C.brk} />
+            <MarkerPill cx={cx} cy={oilTop + 20} label={brk} color={C.brk} />
           </g>
         );
       })()}
@@ -526,15 +528,15 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
         START
       </text>
 
-      {/* SLIDE FOOT marker — plan: dimmed/dashed zone rect; record: filled + expands when active */}
+      {/* SLIDE FOOT marker — plan: dimmed/dashed; record: filled; pill 6 o'clock idle, 9/3 active */}
       {!isReview && slideB != null && (() => {
         const isPlan   = mode === 'plan';
         const isActive = activeZone === 'foot_slide';
-        const cx = bowlerX(slideB, hand);
-        const rw = BOARD_W * (isActive ? 3 : 2.2);
-        // Active: pill above the marker; idle: pill to the right
-        const pillCx = isActive ? cx : Math.min(cx + rw / 2 + 4 + 11, W_LANE - 14);
-        const pillCy = isActive ? SLIDE_MARKER_Y - 11 - 10 : SLIDE_MARKER_Y;
+        const cx   = bowlerX(slideB, hand);
+        const rw   = BOARD_W * (isActive ? 3 : 2.2);
+        const side = hand === 'R' ? -1 : 1;
+        const pillCx = isActive ? clamp(cx + side * (rw / 2 + 15), 14, W_LANE - 14) : cx;
+        const pillCy = isActive ? SLIDE_MARKER_Y : SLIDE_MARKER_Y + 18;
         return (
           <g opacity={isPlan ? 0.55 : 1}>
             {isActive && (
@@ -552,15 +554,15 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
         );
       })()}
 
-      {/* START FOOT marker — dashed zone rect; expands + pill right when active */}
+      {/* START FOOT marker — dashed rect; pill 6 o'clock idle, 9/3 active */}
       {!isReview && stanceB != null && (() => {
         const isActive = activeZone === 'foot_start';
-        const cx  = bowlerX(stanceB, hand);
-        const rcy = APPROACH_DOT_Y + 23;
-        const rw  = BOARD_W * (isActive ? 3 : 2.2);
-        // Active: pill above the marker; idle: pill to the right
-        const pillCx = isActive ? cx : Math.min(cx + rw / 2 + 4 + 11, W_LANE - 14);
-        const pillCy = isActive ? rcy - 11 - 10 : rcy;
+        const cx   = bowlerX(stanceB, hand);
+        const rcy  = APPROACH_DOT_Y + 23;
+        const rw   = BOARD_W * (isActive ? 3 : 2.2);
+        const side = hand === 'R' ? -1 : 1;
+        const pillCx = isActive ? clamp(cx + side * (rw / 2 + 15), 14, W_LANE - 14) : cx;
+        const pillCy = isActive ? rcy : rcy + 18;
         return (
           <g opacity={0.9}>
             {isActive && (

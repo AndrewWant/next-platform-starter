@@ -39,7 +39,7 @@ The first gated app is **LineUp** — a tenpin bowling lane-read tool, ported fr
 
 ---
 
-## Key Technical Decisions
+## Key Technical Decisions 
 
 - **Next.js 16 App Router** with React 19, Turbopack (prod), React Compiler (`babel-plugin-react-compiler`)
 - **`proxy.js`** replaces deprecated `middleware.js` in Next.js 16; exported function must be named `proxy`

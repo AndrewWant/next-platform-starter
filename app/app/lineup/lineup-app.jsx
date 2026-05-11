@@ -15,6 +15,7 @@ import SetupScreen from '../../../components/lineup/SetupScreen';
 import ShotHistory from '../../../components/lineup/ShotHistory';
 import HamburgerMenu   from '../../../components/lineup/HamburgerMenu';
 import SessionReview   from '../../../components/lineup/SessionReview';
+import WheelChip       from '../../../components/lineup/WheelChip';
 import {
   getUserProfile, upsertUserProfile,
   getBalls as getBallsCatalog, createBall,
@@ -422,16 +423,16 @@ export default function LineupApp() {
       <div className="lu-readouts">
         {mode === 'plan' ? (
           <>
-            <Chip color="var(--lu-stance)" label="Foot" value={planFoot} value2={planDerived.slideFoot} />
-            <Chip color="var(--lu-target)" label="Target"     value={planTarget} />
-            <Chip color="var(--lu-brk)"    label="Exp BP"     value={planBrk}   derived />
+            <WheelChip color="var(--lu-stance)" label="Foot"   value={planFoot}   onChange={setPlanFoot}   value2={planDerived.slideFoot} />
+            <WheelChip color="var(--lu-target)" label="Target" value={planTarget} onChange={setPlanTarget} />
+            <Chip      color="var(--lu-brk)"    label="Exp BP" value={planBrk}    derived />
           </>
         ) : (
           <>
-            <Chip color="var(--lu-stance)" label="Foot" value={resultObj.foot} value2={resultObj.slide} />
-            <Chip color="var(--lu-target)" label="Target"     value={resultObj.target} />
-            <Chip color="var(--lu-brk)"    label="Exp BP"     value={resultObj.brk}   derived />
-            <Chip color="var(--lu-finish)" label="Finish"     value={resultObj.finish} />
+            <WheelChip color="var(--lu-stance)" label="Foot"   value={resultObj.slide}  onChange={setRecSlide}  />
+            <WheelChip color="var(--lu-target)" label="Target" value={resultObj.target} onChange={setRecTarget} />
+            <Chip      color="var(--lu-brk)"    label="Exp BP" value={resultObj.brk}    derived />
+            <WheelChip color="var(--lu-finish)" label="Finish" value={resultObj.finish} onChange={setRecFinish} />
           </>
         )}
       </div>

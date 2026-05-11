@@ -192,6 +192,70 @@
   }
   .lu-chip-value.sm { font-size: 13px; }
 
+  /* ── Wheel chip ── */
+  .lu-chip--wheel {
+    align-items: flex-start;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .lu-chip--wheel .lu-chip-bar {
+    margin-top: 2px;
+    align-self: stretch;
+  }
+  .lu-wheel-track {
+    position: relative;
+    height: 72px;
+    overflow: hidden;
+    cursor: ns-resize;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .lu-wheel-track::before,
+  .lu-wheel-track::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0;
+    height: 20px;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .lu-wheel-track::before {
+    top: 0;
+    background: linear-gradient(to bottom, var(--lu-bg-2), transparent);
+  }
+  .lu-wheel-track::after {
+    bottom: 0;
+    background: linear-gradient(to top, var(--lu-bg-2), transparent);
+  }
+  .lu-wheel-items {
+    display: flex;
+    flex-direction: column;
+  }
+  .lu-wheel-items[data-dir="1"]  { animation: lu-wheel-up   160ms ease; }
+  .lu-wheel-items[data-dir="-1"] { animation: lu-wheel-down 160ms ease; }
+  .lu-wheel-item {
+    height: 24px;
+    display: flex;
+    align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--lu-txt-3);
+    line-height: 1;
+  }
+  .lu-wheel-item.active {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--lu-txt);
+  }
+  .lu-chip-value2 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--lu-txt-3);
+    margin-top: 2px;
+  }
+
   /* ── Action button area ── */
   .lu-action {
     flex: 0 0 auto;
@@ -517,4 +581,14 @@
             pointer-events: none;
         }
     }
+}
+
+/* Wheel chip roll animations — outside @layer so they are always available */
+@keyframes lu-wheel-up {
+  from { transform: translateY(24px); }
+  to   { transform: translateY(0); }
+}
+@keyframes lu-wheel-down {
+  from { transform: translateY(-24px); }
+  to   { transform: translateY(0); }
 }

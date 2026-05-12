@@ -423,13 +423,13 @@ export default function LineupApp() {
       <div className="lu-readouts">
         {mode === 'plan' ? (
           <>
-            <WheelChip color="var(--lu-stance)" label="Foot"   value={planFoot}   onChange={setPlanFoot}   value2={planDerived.slideFoot} />
+            <WheelChip color="var(--lu-stance)" label="Foot"   value={planFoot}   onChange={setPlanFoot}   value2={planDerived.slideFoot} min={-5} max={50} />
             <WheelChip color="var(--lu-target)" label="Target" value={planTarget} onChange={setPlanTarget} />
             <Chip      color="var(--lu-brk)"    label="Exp BP" value={planBrk}    derived />
           </>
         ) : (
           <>
-            <WheelChip color="var(--lu-stance)" label="Foot"   value={resultObj.slide}  onChange={setRecSlide}  />
+            <WheelChip color="var(--lu-stance)" label="Foot"   value={resultObj.slide}  onChange={setRecSlide}  min={-5} max={50} />
             <WheelChip color="var(--lu-target)" label="Target" value={resultObj.target} onChange={setRecTarget} />
             <Chip      color="var(--lu-brk)"    label="Exp BP" value={resultObj.brk}    derived />
             <WheelChip color="var(--lu-finish)" label="Finish" value={resultObj.finish} onChange={setRecFinish} />

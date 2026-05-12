@@ -15,6 +15,7 @@ import SetupScreen from '../../../components/lineup/SetupScreen';
 import ShotHistory from '../../../components/lineup/ShotHistory';
 import HamburgerMenu   from '../../../components/lineup/HamburgerMenu';
 import SessionReview   from '../../../components/lineup/SessionReview';
+import EditableChip   from '../../../components/lineup/EditableChip';
 import {
   getUserProfile, upsertUserProfile,
   getBalls as getBallsCatalog, createBall,
@@ -422,16 +423,16 @@ export default function LineupApp() {
       <div className="lu-readouts">
         {mode === 'plan' ? (
           <>
-            <Chip color="var(--lu-stance)" label="Foot" value={planFoot} value2={planDerived.slideFoot} />
-            <Chip color="var(--lu-target)" label="Target"     value={planTarget} />
-            <Chip color="var(--lu-brk)"    label="Exp BP"     value={planBrk}   derived />
+            <EditableChip color="var(--lu-stance)" label="Foot"   value={planFoot}   value2={planDerived.slideFoot} min={-5} max={50} onChange={setPlanFoot} />
+            <EditableChip color="var(--lu-target)" label="Target" value={planTarget}  onChange={setPlanTarget} />
+            <EditableChip color="var(--lu-brk)"    label="Exp BP" value={planBrk}    derived />
           </>
         ) : (
           <>
-            <Chip color="var(--lu-stance)" label="Foot" value={resultObj.foot} value2={resultObj.slide} />
-            <Chip color="var(--lu-target)" label="Target"     value={resultObj.target} />
-            <Chip color="var(--lu-brk)"    label="Exp BP"     value={resultObj.brk}   derived />
-            <Chip color="var(--lu-finish)" label="Finish"     value={resultObj.finish} />
+            <EditableChip color="var(--lu-stance)" label="Foot"   value={resultObj.slide}  min={-5} max={50} onChange={setRecSlide} />
+            <EditableChip color="var(--lu-target)" label="Target" value={resultObj.target} onChange={setRecTarget} />
+            <EditableChip color="var(--lu-brk)"    label="Exp BP" value={resultObj.brk}    derived />
+            <EditableChip color="var(--lu-finish)" label="Finish" value={resultObj.finish} onChange={setRecFinish} />
           </>
         )}
       </div>

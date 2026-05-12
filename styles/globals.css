@@ -192,6 +192,30 @@
   }
   .lu-chip-value.sm { font-size: 13px; }
 
+  /* ── Editable chip ── */
+  .lu-chip.interactive { cursor: text; }
+  .lu-chip.editing {
+    border-color: color-mix(in srgb, var(--lu-chip-accent, var(--lu-line)) 55%, transparent);
+  }
+  .lu-chip-input {
+    background: transparent;
+    border: none;
+    outline: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--lu-txt);
+    width: 100%;
+    padding: 0;
+    margin-top: 1px;
+    line-height: 1.2;
+    caret-color: var(--lu-txt);
+  }
+  .lu-chip-input::placeholder {
+    color: var(--lu-txt-3);
+    font-weight: 500;
+  }
+
   /* ── Action button area ── */
   .lu-action {
     flex: 0 0 auto;

@@ -98,9 +98,9 @@
     background: var(--lu-bg-1);
   }
   .lu-lane-wrap > svg {
-    max-height: 100%;
-    width: 100%;
-    aspect-ratio: 500 / 660;
+    height: 100%;
+    width: auto;
+    max-width: 100%;
     display: block;
   }
 

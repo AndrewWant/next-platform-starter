@@ -161,7 +161,7 @@ function LaneBoardColumn({ pb, oilTop, markerContrast, offsetX }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function Lane({ session, plan, result, mode, on, tweaks, reviewShots, expanded }) {
+export default function Lane({ session, plan, result, mode, on, tweaks, reviewShots, expansionFoot = 0 }) {
   const svgRef  = useRef(null);
   const [activeZone, setActiveZone] = useState(null);
   const hand    = session.hand;
@@ -174,22 +174,25 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
   // The viewBox is animated via RAF so both lane and approach expand together.
 
   const [vbState, setVbState] = useState(() => {
-    const iv = expanded
-      ? { x: 0, w: W_LANE }
-      : { x: laneOffsetX(hand), w: LANE_W };
-    return iv;
+    const ext = Math.min(Math.max(0, expansionFoot - LANE_BOARDS), EXT_BOARDS);
+    return {
+      x: hand === 'R' ? laneOffsetX(hand) - ext * BOARD_W : 0,
+      w: LANE_W + ext * BOARD_W,
+    };
   });
   const vbRef      = useRef(vbState);   // tracks current animated value
   const animRafRef = useRef(null);
 
   useEffect(() => {
-    const targetX = expanded ? 0 : laneOffsetX(hand);
-    const targetW = expanded ? W_LANE : LANE_W;
+    const ext     = Math.min(Math.max(0, expansionFoot - LANE_BOARDS), EXT_BOARDS);
+    const targetX = hand === 'R' ? laneOffsetX(hand) - ext * BOARD_W : 0;
+    const targetW = LANE_W + ext * BOARD_W;
     if (animRafRef.current) cancelAnimationFrame(animRafRef.current);
     const startX = vbRef.current.x;
     const startW = vbRef.current.w;
+    if (Math.abs(startX - targetX) < 0.5 && Math.abs(startW - targetW) < 0.5) return;
     const t0 = performance.now();
-    const DURATION = 220;
+    const DURATION = 180;
     const step = (now) => {
       const t    = Math.min((now - t0) / DURATION, 1);
       const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
@@ -201,7 +204,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
     };
     animRafRef.current = requestAnimationFrame(step);
     return () => { if (animRafRef.current) { cancelAnimationFrame(animRafRef.current); animRafRef.current = null; } };
-  }, [expanded, hand]);
+  }, [expansionFoot, hand]);
 
   useEffect(() => () => { if (animRafRef.current) cancelAnimationFrame(animRafRef.current); }, []);
 
@@ -313,7 +316,8 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
       ref={svgRef}
       viewBox={`${vbState.x} 0 ${vbState.w} ${H_LANE}`}
       preserveAspectRatio="xMidYMid meet"
-      style={{ display: 'block', touchAction: 'none', userSelect: 'none', cursor: 'crosshair' }}
+      style={{ display: 'block', touchAction: 'none', userSelect: 'none', cursor: 'crosshair',
+               aspectRatio: `${vbState.w} / ${H_LANE}` }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}

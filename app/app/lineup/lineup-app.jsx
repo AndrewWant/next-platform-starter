@@ -164,12 +164,13 @@ export default function LineupApp() {
 
   const planBrk = planDerived.brk;
 
-  // ── Expanded lane state ────────────────────────────────────────────────────
-  // True when the foot position has been moved beyond board 39, which reveals
-  // the above-foul-line extended zone (gutter + wall). The approach extension
-  // is always visible regardless of this state.
+  // ── Expansion foot ─────────────────────────────────────────────────────────
+  // Lane passes this to Lane.jsx which reveals extension boards progressively:
+  // boards 40–50 appear one-by-one as foot moves past 39, collapsing back
+  // when foot returns to ≤ 39. Both approach extension and above-foul-line
+  // gutter/wall expand together via viewBox animation.
 
-  const footExpanded = planFoot > 39 || (mode === 'record' && (recFoot ?? planFoot) > 39);
+  const footForExpansion = mode === 'record' ? (recFoot ?? planFoot) : planFoot;
 
   // ── Lane drag callbacks ────────────────────────────────────────────────────
 
@@ -390,12 +391,6 @@ export default function LineupApp() {
       </header>
 
       {/* ── LANE ── */}
-      {/*
-        The SVG viewBox is always 500px wide (50 boards). The approach extension
-        (boards 40–50) is always visible to the left (RH) or right (LH) of the
-        lane surface. The above-foul-line gutter/wall only appears when
-        footExpanded is true (foot position > 39).
-      */}
       <div className="lu-lane-wrap">
         <Lane
           session={sessionCfg}
@@ -404,7 +399,7 @@ export default function LineupApp() {
           mode={mode}
           on={laneOn}
           tweaks={tweaks}
-          expanded={footExpanded}
+          expansionFoot={footForExpansion}
         />
       </div>
 

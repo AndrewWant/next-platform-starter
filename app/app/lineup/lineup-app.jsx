@@ -25,7 +25,9 @@ import {
 } from './actions';
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
-const POCKET = 17;
+const POCKET   = 17;
+const FOOT_MIN = -5;
+const FOOT_MAX = 50;
 
 // ─── Tweaks defaults ──────────────────────────────────────────────────────────
 
@@ -42,10 +44,10 @@ export default function LineupApp() {
   const [, bump]   = useReducer(x => x + 1, 0);
   const refresh    = useCallback(() => bump(), []);
 
-  const [sessionCfg, setSessionCfg] = useState(null);  // null → setup screen
-  const [mode,       setMode]       = useState('plan'); // 'plan' | 'record'
+  const [sessionCfg, setSessionCfg] = useState(null);
+  const [mode,       setMode]       = useState('plan');
   const [editIndex,  setEditIndex]  = useState(null);
-  const [drawer,     setDrawer]     = useState(null);   // 'history' | 'menu' | null
+  const [drawer,     setDrawer]     = useState(null);
   const [tweaks,     setTweaks]     = useState(TWEAK_DEFAULTS);
 
   // ── Supabase persistence ───────────────────────────────────────────────────
@@ -53,21 +55,18 @@ export default function LineupApp() {
   const [ballCatalog,   setBallCatalog]   = useState([]);
   const [dbSessionId,   setDbSessionId]   = useState(null);
   const [dbLineupBallId, setDbLineupBallId] = useState(null);
-  const dbShotCountRef = useRef(0); // tracks how many shots have been persisted
+  const dbShotCountRef = useRef(0);
 
   useEffect(() => {
     getUserProfile().then(p => { if (p) setUserProfile(p); }).catch(() => {});
     getBallsCatalog().then(b => setBallCatalog(b)).catch(() => {});
   }, []);
 
-  // Plan: foot and target are the two independent inputs.
-  // Breakpoint is always derived: LaneRead.expectedBreakpoint(slideFoot, target).
   const [planFoot,   setPlanFoot]   = useState(15);
   const [planTarget, setPlanTarget] = useState(10);
 
-  // Record: start foot, slide foot, target, finish independently set. Brk always derived.
-  const [recFoot,   setRecFoot]   = useState(null);  // start/setup foot
-  const [recSlide,  setRecSlide]  = useState(null);  // slide/finish foot at foul line
+  const [recFoot,   setRecFoot]   = useState(null);
+  const [recSlide,  setRecSlide]  = useState(null);
   const [recTarget, setRecTarget] = useState(null);
   const [recFinish, setRecFinish] = useState(POCKET);
 
@@ -80,14 +79,12 @@ export default function LineupApp() {
     setMode('plan');
     setEditIndex(null);
     dbShotCountRef.current = 0;
-    // Initialise foot from move table: start at target=10, rule-of-31 breakpoint
     const brkBase       = clamp(cfg.patternLength - 31, 1, 39);
     const slideFootInit = LaneRead.footFromTargetAndBreakpoint(10, brkBase).foot;
-    setPlanFoot(clamp(Math.round(slideFootInit - cfg.drift), 1, 39));
+    setPlanFoot(clamp(Math.round(slideFootInit - cfg.drift), FOOT_MIN, FOOT_MAX));
     setPlanTarget(10);
     refresh();
 
-    // Persist to Supabase (fire-and-forget — in-memory state is source of truth)
     const hand = cfg.hand === 'R' ? 'R' : 'L';
     Promise.all([
       upsertUserProfile({ hand, ball_to_slide_foot: cfg.ballOffset, drift: cfg.drift }),
@@ -100,7 +97,6 @@ export default function LineupApp() {
       }),
     ]).then(([, sessId]) => {
       setDbSessionId(sessId);
-      // Find or create ball in catalog
       const existingBall = cfg.ballId
         ? ballCatalog.find(b => b.id === cfg.ballId)
         : ballCatalog.find(b => b.name.toLowerCase() === (cfg.ballName || '').toLowerCase());
@@ -131,17 +127,16 @@ export default function LineupApp() {
     setSessionCfg(cfg);
     setMode('plan');
     setEditIndex(null);
-    // Re-derive foot from first shot's target+brk if available
     const lr = State.laneRead;
     if (lr?.shots?.length) {
       const first = lr.shots[0];
       const sfNext = LaneRead.footFromTargetAndBreakpoint(first.target, first.breakpoint).foot;
-      setPlanFoot(clamp(Math.round(sfNext - cfg.drift), 1, 39));
+      setPlanFoot(clamp(Math.round(sfNext - cfg.drift), FOOT_MIN, FOOT_MAX));
       setPlanTarget(first.target);
     } else {
       const brkBase = clamp(s.patternLength - 31, 1, 39);
       const sfInit  = LaneRead.footFromTargetAndBreakpoint(10, brkBase).foot;
-      setPlanFoot(clamp(Math.round(sfInit - cfg.drift), 1, 39));
+      setPlanFoot(clamp(Math.round(sfInit - cfg.drift), FOOT_MIN, FOOT_MAX));
       setPlanTarget(10);
     }
     refresh();
@@ -157,7 +152,6 @@ export default function LineupApp() {
   }, []);
 
   // ── Derived plan values ────────────────────────────────────────────────────
-  // Brk is always derived from foot + target via the move table.
 
   const planDerived = useMemo(() => {
     const drift      = sessionCfg?.drift      ?? 0;
@@ -170,16 +164,20 @@ export default function LineupApp() {
 
   const planBrk = planDerived.brk;
 
+  // ── Expanded lane state ────────────────────────────────────────────────────
+  // True when the foot position has been moved beyond board 39, which reveals
+  // the above-foul-line extended zone (gutter + wall). The approach extension
+  // is always visible regardless of this state.
+
+  const footExpanded = planFoot > 39 || (mode === 'record' && (recFoot ?? planFoot) > 39);
+
   // ── Lane drag callbacks ────────────────────────────────────────────────────
-  //
-  // Plan mode: foot and target are draggable; brk is display-only.
-  // Record mode: foot, target, and finish are draggable; brk is display-only.
 
   const laneOn = useMemo(() => ({
     foot_start: (b) => { if (mode === 'plan') setPlanFoot(b);  else setRecFoot(b);  },
     foot_slide: (b) => { if (mode === 'record') setRecSlide(b); },
     target:     (b) => { if (mode === 'plan') setPlanTarget(b); else setRecTarget(b); },
-    brk:        ()  => { /* display only — never interactive */ },
+    brk:        ()  => { /* display only */ },
     finish:     (b) => setRecFinish(b),
   }), [mode]);
 
@@ -228,7 +226,6 @@ export default function LineupApp() {
       setEditIndex(null);
     } else {
       recordShot(planned, actual);
-      // Persist shot to Supabase (fire-and-forget)
       if (dbSessionId && dbLineupBallId) {
         dbShotCountRef.current += 1;
         const shotNum = dbShotCountRef.current;
@@ -272,10 +269,9 @@ export default function LineupApp() {
       nextBrk    = State.suggestion.breakpoint ?? planBrk;
     }
 
-    // Convert suggestion target+brk back to foot via move table
     setPlanTarget(nextTarget);
     const slideFootNext = LaneRead.footFromTargetAndBreakpoint(nextTarget, nextBrk).foot;
-    setPlanFoot(clamp(Math.round(slideFootNext - drift), 1, 39));
+    setPlanFoot(clamp(Math.round(slideFootNext - drift), FOOT_MIN, FOOT_MAX));
     setMode('plan');
     refresh();
   }, [
@@ -394,6 +390,12 @@ export default function LineupApp() {
       </header>
 
       {/* ── LANE ── */}
+      {/*
+        The SVG viewBox is always 500px wide (50 boards). The approach extension
+        (boards 40–50) is always visible to the left (RH) or right (LH) of the
+        lane surface. The above-foul-line gutter/wall only appears when
+        footExpanded is true (foot position > 39).
+      */}
       <div className="lu-lane-wrap">
         <Lane
           session={sessionCfg}
@@ -402,6 +404,7 @@ export default function LineupApp() {
           mode={mode}
           on={laneOn}
           tweaks={tweaks}
+          expanded={footExpanded}
         />
       </div>
 
@@ -423,13 +426,13 @@ export default function LineupApp() {
       <div className="lu-readouts">
         {mode === 'plan' ? (
           <>
-            <WheelChip color="var(--lu-stance)" label="Foot"   value={planFoot}   onChange={setPlanFoot}   value2={planDerived.slideFoot} min={-5} max={50} />
+            <WheelChip color="var(--lu-stance)" label="Foot"   value={planFoot}   onChange={setPlanFoot}   value2={planDerived.slideFoot} min={FOOT_MIN} max={FOOT_MAX} />
             <WheelChip color="var(--lu-target)" label="Target" value={planTarget} onChange={setPlanTarget} />
             <Chip      color="var(--lu-brk)"    label="Exp BP" value={planBrk}    derived />
           </>
         ) : (
           <>
-            <WheelChip color="var(--lu-stance)" label="Foot"   value={resultObj.slide}  onChange={setRecSlide}  min={-5} max={50} />
+            <WheelChip color="var(--lu-stance)" label="Foot"   value={resultObj.slide}  onChange={setRecSlide}  min={FOOT_MIN} max={FOOT_MAX} />
             <WheelChip color="var(--lu-target)" label="Target" value={resultObj.target} onChange={setRecTarget} />
             <Chip      color="var(--lu-brk)"    label="Exp BP" value={resultObj.brk}    derived />
             <WheelChip color="var(--lu-finish)" label="Finish" value={resultObj.finish} onChange={setRecFinish} />

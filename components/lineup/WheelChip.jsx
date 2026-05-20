@@ -14,6 +14,8 @@ const VEL_THRESH = 0.15;
 // height of each wheel slot in px (must match CSS)
 const ITEM_H = 24;
 
+const clampVal = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+
 export default function WheelChip({ color, label, value, onChange, min = 1, max = 39, value2 }) {
   const trackRef     = useRef(null);
   const wheelAccum   = useRef(0);
@@ -24,23 +26,18 @@ export default function WheelChip({ color, label, value, onChange, min = 1, max 
   const didTouch     = useRef(false); // suppress synthetic click after touch
   const [anim, setAnim] = useState({ dir: 0, id: 0 });
 
-  const range = max - min + 1;
-
   // Uses functional update so nudge never captures stale `value` from closure.
-  // This makes nudge stable (same reference across renders), which lets the
-  // non-passive event-listener effect run only once.
   const nudge = useCallback((delta, fromMomentum = false) => {
     onChange(prev => {
       const v = (prev == null ? min : prev);
-      return ((v + delta - min) % range + range) % range + min;
+      return clampVal(v + delta, min, max);
     });
     if (!fromMomentum) {
       if (animTimer.current) clearTimeout(animTimer.current);
-      // Change `id` to force remount of lu-wheel-items, re-triggering the CSS animation
       setAnim(a => ({ dir: delta > 0 ? 1 : -1, id: a.id + 1 }));
       animTimer.current = setTimeout(() => setAnim(a => ({ ...a, dir: 0 })), 160);
     }
-  }, [onChange, min, range]);
+  }, [onChange, min, max]);
 
   const cancelMomentum = useCallback(() => {
     if (rafRef.current != null) {
@@ -49,9 +46,6 @@ export default function WheelChip({ color, label, value, onChange, min = 1, max 
     }
   }, []);
 
-  // Wheel and touchmove must be non-passive to call preventDefault (stops page scroll).
-  // React synthetic events can't override passive defaults set by the browser, so we
-  // attach these directly via useEffect.
   useEffect(() => {
     const el = trackRef.current;
     if (!el) return;
@@ -68,7 +62,7 @@ export default function WheelChip({ color, label, value, onChange, min = 1, max 
       const ts = touchState.current;
       if (!ts) return;
       const y  = e.touches[0].clientY;
-      const dy = ts.y - y; // positive = finger moved up = value increases
+      const dy = ts.y - y;
       ts.acc += dy;
       ts.y = y;
       ts.history.push({ y, t: performance.now() });
@@ -85,7 +79,6 @@ export default function WheelChip({ color, label, value, onChange, min = 1, max 
     };
   }, [nudge]);
 
-  // Cleanup on unmount
   useEffect(() => () => {
     cancelMomentum();
     if (animTimer.current) clearTimeout(animTimer.current);
@@ -107,7 +100,7 @@ export default function WheelChip({ color, label, value, onChange, min = 1, max 
     const dt   = hist[hist.length - 1].t - hist[0].t;
     if (dt === 0) return;
 
-    let vel = (hist[0].y - hist[hist.length - 1].y) / dt; // px/ms; +ve = value increases
+    let vel = (hist[0].y - hist[hist.length - 1].y) / dt;
     if (Math.abs(vel) < VEL_THRESH) return;
 
     momAccum.current = 0;
@@ -122,15 +115,15 @@ export default function WheelChip({ color, label, value, onChange, min = 1, max 
   }, [nudge]);
 
   const handleClick = useCallback((e) => {
-    // Suppress the synthetic click that fires ~300ms after touchend on mobile
     if (didTouch.current) { didTouch.current = false; return; }
     const rect = e.currentTarget.getBoundingClientRect();
     nudge(e.clientY < rect.top + rect.height / 2 ? -1 : +1);
   }, [nudge]);
 
   const safe = value ?? min;
-  const prev = ((safe - 1 - min) % range + range) % range + min;
-  const next = ((safe + 1 - min) % range + range) % range + min;
+  // Clamp prev/next so they don't show out-of-range values at the boundaries
+  const prev = clampVal(safe - 1, min, max);
+  const next = clampVal(safe + 1, min, max);
 
   return (
     <div className="lu-chip lu-chip--wheel">
@@ -149,9 +142,10 @@ export default function WheelChip({ color, label, value, onChange, min = 1, max 
             className="lu-wheel-items"
             data-dir={anim.dir}
           >
-            <div className="lu-wheel-item">{prev}</div>
+            {/* At min boundary show blank above; at max boundary show blank below */}
+            <div className="lu-wheel-item">{safe === min ? '' : prev}</div>
             <div className="lu-wheel-item active">{safe}</div>
-            <div className="lu-wheel-item">{next}</div>
+            <div className="lu-wheel-item">{safe === max ? '' : next}</div>
           </div>
         </div>
         {value2 != null && value2 !== value && (

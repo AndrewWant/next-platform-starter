@@ -100,7 +100,7 @@
   .lu-lane-wrap > svg {
     max-height: 100%;
     width: 100%;
-    aspect-ratio: 390 / 660;
+    aspect-ratio: 500 / 660;
     display: block;
   }
 

@@ -458,7 +458,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
             {isActive && <rect x={fx - xOff - 3} y={0} width={w + 6} height={PIN_DECK_H} fill={C.finish} opacity={0.12} />}
             <rect x={fx - xOff} y={2} width={w} height={PIN_DECK_H - 4} fill={C.finish} opacity={isActive ? 0.45 : 0.55} />
             <rect x={fx - xOff} y={2} width={w} height={PIN_DECK_H - 4} fill="none" stroke={C.finish} strokeWidth={isActive ? 2.5 : 1.5} />
-            <MarkerPill cx={pillCx} cy={pillCy} label={finish} color={C.finish} />
+            {!isActive && <MarkerPill cx={pillCx} cy={pillCy} label={finish} color={C.finish} />}
           </g>
         );
       })()}
@@ -543,7 +543,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
             {isActive && <circle cx={cx} cy={ARROW_LINE_Y} r={22} fill={C.target} opacity={0.18} />}
             <circle cx={cx} cy={ARROW_LINE_Y} r={r} fill="none" stroke={C.target} strokeWidth={2.4} />
             <circle cx={cx} cy={ARROW_LINE_Y} r={2.6} fill={C.target} />
-            <MarkerPill cx={pillCx} cy={pillCy} label={target} color={C.target} />
+            {!isActive && <MarkerPill cx={pillCx} cy={pillCy} label={target} color={C.target} />}
           </g>
         );
       })()}
@@ -612,7 +612,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
             <rect x={cx - rw / 2} y={SLIDE_MARKER_Y - 11} width={rw} height={22} rx={5}
                   fill={isPlan ? 'none' : C.stance} stroke={C.stance}
                   strokeWidth={isActive ? 2.5 : 2} strokeDasharray={isPlan ? '4 3' : '0'} />
-            <MarkerPill cx={pillCx} cy={pillCy} label={slideB} color={C.stance} />
+            {!isActive && <MarkerPill cx={pillCx} cy={pillCy} label={slideB} color={C.stance} />}
           </g>
         );
       })()}
@@ -632,7 +632,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
             <rect x={cx - rw / 2} y={rcy - 11} width={rw} height={22} rx={5}
                   fill="none" stroke={C.stance}
                   strokeWidth={isActive ? 2.5 : 1.8} strokeDasharray={isActive ? '0' : '5 3'} />
-            <MarkerPill cx={pillCx} cy={pillCy} label={stanceB} color={C.stance} />
+            {!isActive && <MarkerPill cx={pillCx} cy={pillCy} label={stanceB} color={C.stance} />}
           </g>
         );
       })()}
@@ -655,18 +655,11 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
       {/* CROSSHAIR */}
       {activeZone && crosshairX != null && (() => {
         const { y1, y2 } = ZONE_Y[activeZone];
-        const color  = ZONE_COLOR[activeZone];
-        const labelY = activeZone === 'brk' ? y1 + 14 : y2 - 6;
+        const color = ZONE_COLOR[activeZone];
         return (
           <g pointerEvents="none">
             <line x1={crosshairX} y1={y1} x2={crosshairX} y2={y2} stroke="rgba(0,0,0,0.55)" strokeWidth={5} />
             <line x1={crosshairX} y1={y1} x2={crosshairX} y2={y2} stroke={color} strokeWidth={2.5} strokeDasharray="7 4" />
-            <rect x={crosshairX - 19} y={labelY - 13} width={38} height={26} rx={13} fill="rgba(0,0,0,0.65)" />
-            <rect x={crosshairX - 18} y={labelY - 12} width={36} height={24} rx={12} fill={color} opacity={0.95} />
-            <text x={crosshairX} y={labelY + 7} textAnchor="middle"
-                  fontFamily="'JetBrains Mono', monospace" fontSize={20} fontWeight={700} fill="#fff">
-              {crosshairBoard}
-            </text>
           </g>
         );
       })()}

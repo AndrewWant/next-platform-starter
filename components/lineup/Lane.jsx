@@ -115,10 +115,10 @@ export { bowlerToPhys, physToBowler, round1, clamp, ARROW_BOARDS, FOUL_Y, PIN_RO
 function MarkerPill({ cx, cy, label, color }) {
   return (
     <g pointerEvents="none">
-      <rect x={cx - 11} y={cy - 7} width={22} height={14} rx={7} fill="rgba(0,0,0,0.72)" />
-      <rect x={cx - 10} y={cy - 6} width={20} height={12} rx={6} fill={color} opacity={0.95} />
-      <text x={cx} y={cy + 4} textAnchor="middle"
-            fontFamily="'JetBrains Mono', monospace" fontSize={10} fontWeight={700} fill="#fff">
+      <rect x={cx - 19} y={cy - 13} width={38} height={26} rx={13} fill="rgba(0,0,0,0.72)" />
+      <rect x={cx - 18} y={cy - 12} width={36} height={24} rx={12} fill={color} opacity={0.95} />
+      <text x={cx} y={cy + 7} textAnchor="middle"
+            fontFamily="'JetBrains Mono', monospace" fontSize={20} fontWeight={700} fill="#fff">
         {label}
       </text>
     </g>
@@ -159,11 +159,54 @@ function LaneBoardColumn({ pb, oilTop, markerContrast, offsetX }) {
   );
 }
 
+function BoardLoupe({ cx, cy, board, color }) {
+  const BW = BOARD_W * 2;
+  const R  = 50;
+  const boards = [-2, -1, 0, 1, 2].map(d => board + d);
+  return (
+    <g pointerEvents="none">
+      <defs>
+        <clipPath id="lu-loupe-clip">
+          <circle cx={cx} cy={cy} r={R} />
+        </clipPath>
+      </defs>
+      <circle cx={cx} cy={cy} r={R} fill="#1c0f04" />
+      <g clipPath="url(#lu-loupe-clip)">
+        {boards.map((b, i) => {
+          const bx = cx - BW * 2.5 + i * BW;
+          const isCenter = i === 2;
+          const fs = isCenter ? 24 : Math.abs(i - 2) === 1 ? 15 : 12;
+          return (
+            <g key={b}>
+              <rect x={bx} y={cy - R} width={BW} height={R * 2}
+                    fill={isCenter ? color : (i % 2 === 0 ? '#2e1a08' : '#1c0f04')}
+                    opacity={isCenter ? 0.85 : 1} />
+              <text x={bx + BW / 2} y={cy + fs * 0.4} textAnchor="middle"
+                    fontFamily="'JetBrains Mono', monospace" fontSize={fs} fontWeight={700}
+                    fill={b >= 1 && b <= 50 ? (isCenter ? '#fff' : 'rgba(255,255,255,0.45)') : 'none'}>
+                {b >= 1 && b <= 50 ? b : ''}
+              </text>
+            </g>
+          );
+        })}
+        <line x1={cx} y1={cy - R} x2={cx} y2={cy + R}
+              stroke="rgba(255,255,255,0.2)" strokeWidth={0.8} />
+      </g>
+      <circle cx={cx} cy={cy} r={R} fill="none" stroke={color} strokeWidth={2.5} />
+      <polygon points={`${cx - 8},${cy + R - 1} ${cx + 8},${cy + R - 1} ${cx},${cy + R + 12}`}
+               fill="#1c0f04" />
+      <polyline points={`${cx - 8},${cy + R - 1} ${cx},${cy + R + 12} ${cx + 8},${cy + R - 1}`}
+                fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+    </g>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function Lane({ session, plan, result, mode, on, tweaks, reviewShots, expansionFoot = 0 }) {
   const svgRef  = useRef(null);
   const [activeZone, setActiveZone] = useState(null);
+  const [loupeSvgY,  setLoupeSvgY]  = useState(null);
   const hand    = session.hand;
   const oilTop  = patternY(session.patternLength);
   const offsetX = laneOffsetX(hand);
@@ -256,16 +299,21 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
     const svgY = svgYFromPointer(e.clientY);
     const zone = zoneFromY(svgY);
     if (!zone) return;
+    setLoupeSvgY(svgY);
     setActiveZone(zone);
     fireZone(zone, svgX);
   }, [isReview, svgXFromPointer, svgYFromPointer, zoneFromY, fireZone]);
 
   const handlePointerMove = useCallback((e) => {
     if (!activeZone) return;
+    setLoupeSvgY(svgYFromPointer(e.clientY));
     fireZone(activeZone, svgXFromPointer(e.clientX));
-  }, [activeZone, svgXFromPointer, fireZone]);
+  }, [activeZone, svgXFromPointer, svgYFromPointer, fireZone]);
 
-  const handlePointerUp = useCallback(() => setActiveZone(null), []);
+  const handlePointerUp = useCallback(() => {
+    setActiveZone(null);
+    setLoupeSvgY(null);
+  }, []);
 
   const ZONE_Y = {
     finish:     { y1: 2,              y2: PIN_DECK_H - 2  },
@@ -404,7 +452,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
         const xOff = isActive ? BOARD_W * 0.75 : 0;
         const side = hand === 'R' ? -1 : 1;
         const pillCx = isActive ? clamp(cx + side * (w / 2 + 15), 14, W_LANE - 14) : cx;
-        const pillCy = isActive ? PIN_DECK_H / 2 : PIN_DECK_H + 12;
+        const pillCy = isActive ? PIN_DECK_H / 2 : PIN_DECK_H + 22;
         return (
           <g>
             {isActive && <rect x={fx - xOff - 3} y={0} width={w + 6} height={PIN_DECK_H} fill={C.finish} opacity={0.12} />}
@@ -489,7 +537,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
         const r    = isActive ? 15 : 8.5;
         const side = hand === 'R' ? -1 : 1;
         const pillCx = isActive ? clamp(cx + side * (22 + 15), 14, W_LANE - 14) : cx;
-        const pillCy = isActive ? ARROW_LINE_Y : ARROW_LINE_Y + 20;
+        const pillCy = isActive ? ARROW_LINE_Y : ARROW_LINE_Y + 30;
         return (
           <g>
             {isActive && <circle cx={cx} cy={ARROW_LINE_Y} r={22} fill={C.target} opacity={0.18} />}
@@ -508,7 +556,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
             <line x1={cx} y1={oilTop - 7} x2={cx} y2={oilTop + 7} stroke={C.brk} strokeWidth={2.5} />
             <circle cx={cx} cy={oilTop} r={8.5} fill="none" stroke={C.brk} strokeWidth={2.4} />
             <circle cx={cx} cy={oilTop} r={2.6} fill={C.brk} />
-            <MarkerPill cx={cx} cy={oilTop + 20} label={brk} color={C.brk} />
+            <MarkerPill cx={cx} cy={oilTop + 30} label={brk} color={C.brk} />
           </g>
         );
       })()}
@@ -557,7 +605,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
         const rw   = BOARD_W * (isActive ? 3 : 2.2);
         const side = hand === 'R' ? -1 : 1;
         const pillCx = isActive ? clamp(cx + side * (rw / 2 + 15), 14, W_LANE - 14) : cx;
-        const pillCy = isActive ? SLIDE_MARKER_Y : SLIDE_MARKER_Y + 18;
+        const pillCy = isActive ? SLIDE_MARKER_Y : SLIDE_MARKER_Y + 30;
         return (
           <g opacity={isPlan ? 0.55 : 1}>
             {isActive && <rect x={cx - rw / 2 - 6} y={SLIDE_MARKER_Y - 17} width={rw + 12} height={34} rx={8} fill={C.stance} opacity={0.18} />}
@@ -577,7 +625,7 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
         const rw   = BOARD_W * (isActive ? 3 : 2.2);
         const side = hand === 'R' ? -1 : 1;
         const pillCx = isActive ? clamp(cx + side * (rw / 2 + 15), 14, W_LANE - 14) : cx;
-        const pillCy = isActive ? rcy : rcy + 18;
+        const pillCy = isActive ? rcy : rcy + 30;
         return (
           <g opacity={0.9}>
             {isActive && <rect x={cx - rw / 2 - 6} y={rcy - 17} width={rw + 12} height={34} rx={8} fill={C.stance} opacity={0.18} />}
@@ -613,13 +661,23 @@ export default function Lane({ session, plan, result, mode, on, tweaks, reviewSh
           <g pointerEvents="none">
             <line x1={crosshairX} y1={y1} x2={crosshairX} y2={y2} stroke="rgba(0,0,0,0.55)" strokeWidth={5} />
             <line x1={crosshairX} y1={y1} x2={crosshairX} y2={y2} stroke={color} strokeWidth={2.5} strokeDasharray="7 4" />
-            <rect x={crosshairX - 14} y={labelY - 11} width={28} height={18} rx={9} fill="rgba(0,0,0,0.65)" />
-            <rect x={crosshairX - 13} y={labelY - 10} width={26} height={16} rx={8} fill={color} opacity={0.95} />
-            <text x={crosshairX} y={labelY + 1.5} textAnchor="middle"
-                  fontFamily="'JetBrains Mono', monospace" fontSize={10} fontWeight={700} fill="#fff">
+            <rect x={crosshairX - 19} y={labelY - 13} width={38} height={26} rx={13} fill="rgba(0,0,0,0.65)" />
+            <rect x={crosshairX - 18} y={labelY - 12} width={36} height={24} rx={12} fill={color} opacity={0.95} />
+            <text x={crosshairX} y={labelY + 7} textAnchor="middle"
+                  fontFamily="'JetBrains Mono', monospace" fontSize={20} fontWeight={700} fill="#fff">
               {crosshairBoard}
             </text>
           </g>
+        );
+      })()}
+
+      {/* DRAG LOUPE */}
+      {activeZone && crosshairX != null && loupeSvgY != null && (() => {
+        const R  = 50;
+        const lx = clamp(crosshairX, vbState.x + R + 4, vbState.x + vbState.w - R - 4);
+        const ly = clamp(loupeSvgY - R - 20, R + 4, H_LANE - R - 20);
+        return (
+          <BoardLoupe cx={lx} cy={ly} board={crosshairBoard} color={ZONE_COLOR[activeZone]} />
         );
       })()}
     </svg>

@@ -7,11 +7,15 @@ export const metadata = {
   description: 'Lane read tool for tenpin bowling.',
 }
 
-export default async function LineupPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+export default async function LineupPage({ searchParams }) {
+  const params = await searchParams;
+  const isGuest = !!params?.origin;
 
-  if (!user) redirect('/login?next=/app/lineup')
+  if (!isGuest) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) redirect('/login?next=/app/lineup')
+  }
 
-  return <LineupApp />
+  return <LineupApp guestMode={isGuest} />
 }

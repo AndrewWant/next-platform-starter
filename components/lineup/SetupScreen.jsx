@@ -10,8 +10,9 @@ export default function SetupScreen({
   defaultHand = 'R',
   defaultBallOffset = 5,
   defaultDrift = 2,
+  defaultPatternLength = 42,
 }) {
-  const [patternLength, setPatternLength] = useState(42);
+  const [patternLength, setPatternLength] = useState(defaultPatternLength);
   const [patternLabel,  setPatternLabel]  = useState('');
   const [ballOffset,    setBallOffset]    = useState(defaultBallOffset);
   const [drift,         setDrift]         = useState(defaultDrift);
@@ -32,7 +33,8 @@ export default function SetupScreen({
     }
   }, [ballCatalog]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Pre-fill defaults when they arrive from the profile
+  // Pre-fill defaults when they arrive from the profile or URL params
+  useEffect(() => { setPatternLength(defaultPatternLength); }, [defaultPatternLength]);
   useEffect(() => { setBallOffset(defaultBallOffset); }, [defaultBallOffset]);
   useEffect(() => { setDrift(defaultDrift); }, [defaultDrift]);
   useEffect(() => { setHand(defaultHand); }, [defaultHand]);

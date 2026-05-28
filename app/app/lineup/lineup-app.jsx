@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useReducer, useCallback, useMemo, useEffect, useRef } from 'react';
-import { CONSTANTS, initSession } from '../../../lib/lineup/constants';
+import { CONSTANTS, initSession, decodeSessionURL } from '../../../lib/lineup/constants';
 import { LaneRead } from '../../../lib/lineup/models';
 import {
   State, startSession, recordShot, updateShot, removeShot,
@@ -40,7 +40,7 @@ const TWEAK_DEFAULTS = {
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
-export default function LineupApp() {
+export default function LineupApp({ guestMode = false }) {
   const [, bump]   = useReducer(x => x + 1, 0);
   const refresh    = useCallback(() => bump(), []);
 
@@ -57,10 +57,21 @@ export default function LineupApp() {
   const [dbLineupBallId, setDbLineupBallId] = useState(null);
   const dbShotCountRef = useRef(0);
 
+  // ── Integration / guest mode ───────────────────────────────────────────────
+  const originRef    = useRef(null);
+  const [urlDefaults, setUrlDefaults] = useState(null);
+
   useEffect(() => {
-    getUserProfile().then(p => { if (p) setUserProfile(p); }).catch(() => {});
-    getBallsCatalog().then(b => setBallCatalog(b)).catch(() => {});
-  }, []);
+    const decoded = decodeSessionURL();
+    if (decoded) {
+      originRef.current = decoded.origin;
+      setUrlDefaults(decoded);
+    }
+    if (!guestMode) {
+      getUserProfile().then(p => { if (p) setUserProfile(p); }).catch(() => {});
+      getBallsCatalog().then(b => setBallCatalog(b)).catch(() => {});
+    }
+  }, [guestMode]);
 
   const [planFoot,   setPlanFoot]   = useState(15);
   const [planTarget, setPlanTarget] = useState(10);
@@ -86,31 +97,33 @@ export default function LineupApp() {
     refresh();
 
     const hand = cfg.hand === 'R' ? 'R' : 'L';
-    Promise.all([
-      upsertUserProfile({ hand, ball_to_slide_foot: cfg.ballOffset, drift: cfg.drift }),
-      createDbSession({
-        pattern_label:    cfg.patternLabel || null,
-        pattern_length:   cfg.patternLength,
-        hand,
-        ball_to_slide_foot: cfg.ballOffset,
-        drift:            cfg.drift,
-      }),
-    ]).then(([, sessId]) => {
-      setDbSessionId(sessId);
-      const existingBall = cfg.ballId
-        ? ballCatalog.find(b => b.id === cfg.ballId)
-        : ballCatalog.find(b => b.name.toLowerCase() === (cfg.ballName || '').toLowerCase());
-      const ballPromise = existingBall
-        ? Promise.resolve(existingBall)
-        : createBall({ name: cfg.ballName || 'Ball 1', surface: cfg.surface || null });
-      return ballPromise.then(ball => {
-        if (!existingBall) setBallCatalog(prev => [...prev, ball]);
-        return addBallToSession({ session_id: sessId, ball_id: ball.id, surface: cfg.surface || null });
-      });
-    }).then(lbId => {
-      setDbLineupBallId(lbId);
-    }).catch(() => {});
-  }, [refresh, ballCatalog]);
+    if (!guestMode) {
+      Promise.all([
+        upsertUserProfile({ hand, ball_to_slide_foot: cfg.ballOffset, drift: cfg.drift }),
+        createDbSession({
+          pattern_label:    cfg.patternLabel || null,
+          pattern_length:   cfg.patternLength,
+          hand,
+          ball_to_slide_foot: cfg.ballOffset,
+          drift:            cfg.drift,
+        }),
+      ]).then(([, sessId]) => {
+        setDbSessionId(sessId);
+        const existingBall = cfg.ballId
+          ? ballCatalog.find(b => b.id === cfg.ballId)
+          : ballCatalog.find(b => b.name.toLowerCase() === (cfg.ballName || '').toLowerCase());
+        const ballPromise = existingBall
+          ? Promise.resolve(existingBall)
+          : createBall({ name: cfg.ballName || 'Ball 1', surface: cfg.surface || null });
+        return ballPromise.then(ball => {
+          if (!existingBall) setBallCatalog(prev => [...prev, ball]);
+          return addBallToSession({ session_id: sessId, ball_id: ball.id, surface: cfg.surface || null });
+        });
+      }).then(lbId => {
+        setDbLineupBallId(lbId);
+      }).catch(() => {});
+    }
+  }, [guestMode, refresh, ballCatalog]);
 
   const handleImport = useCallback((json) => {
     importSessionJSON(json);
@@ -192,6 +205,14 @@ export default function LineupApp() {
       setRecFinish(POCKET);
     }
     setMode('record');
+
+    const origin = originRef.current;
+    if (origin && window.opener && document.referrer.startsWith(origin)) {
+      window.opener.postMessage(
+        { type: 'lineup_selected', foot: planFoot, arrow: planTarget },
+        origin
+      );
+    }
   }, [editIndex, planFoot, planTarget, sessionCfg?.drift]);
 
   const enterPlan = useCallback(() => {
@@ -323,8 +344,9 @@ export default function LineupApp() {
           onStart={handleStart}
           onImport={handleImport}
           ballCatalog={ballCatalog}
-          defaultHand={userProfile?.hand ?? 'R'}
-          defaultBallOffset={userProfile?.ball_to_slide_foot ?? 5}
+          defaultHand={urlDefaults?.handedness ?? userProfile?.hand ?? 'R'}
+          defaultBallOffset={urlDefaults?.ballToSlideFoot ?? userProfile?.ball_to_slide_foot ?? 5}
+          defaultPatternLength={urlDefaults?.patternLength ?? 42}
           defaultDrift={userProfile?.drift ?? 2}
         />
       </div>
